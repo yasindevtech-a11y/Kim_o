@@ -132,6 +132,10 @@ class MainActivity : Activity() {
         if (!ready) return
         refreshWarnings()
         handler.post(ticker)
+        try {
+            getSharedPreferences("zil_boot", Context.MODE_PRIVATE).edit().putBoolean("starting", false).apply()
+        } catch (_: Throwable) {
+        }
     }
 
     private fun buildUi() {
