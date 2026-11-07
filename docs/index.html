@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FF6D00">
+<title>Kim_O</title>
+<style>
+  :root { --bg:#fff7f0; --fg:#2b1b0e; --muted:#7a6552; --accent:#ff6d00; --accent-d:#e65100; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1b1410; --fg:#fbeee2; --muted:#b9a592; }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; margin:0; }
+  body {
+    background:var(--bg); color:var(--fg);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+  }
+  main { width:100%; max-width:420px; padding:24px 20px 40px; }
+  .where { font-size:15px; color:var(--muted); margin:0 0 4px; letter-spacing:.02em; }
+  h1 { font-size:30px; line-height:1.2; margin:0 0 32px; word-break:break-word; }
+  #ring {
+    width:220px; height:220px; border-radius:50%; border:0; cursor:pointer;
+    background:radial-gradient(circle at 35% 30%, #ff9a47, var(--accent) 55%, var(--accent-d));
+    color:#fff; font-weight:800; font-size:20px; letter-spacing:.04em;
+    box-shadow:0 14px 34px rgba(230,81,0,.38), inset 0 -6px 14px rgba(0,0,0,.18);
+    display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+    transition:transform .12s ease, filter .2s ease;
+  }
+  #ring .ico { font-size:68px; line-height:1; }
+  #ring:active:not(:disabled) { transform:scale(.95); }
+  #ring:disabled { filter:grayscale(.65) brightness(1.05); cursor:default; box-shadow:none; }
+  .msg { min-height:48px; margin:28px 0 8px; font-size:17px; line-height:1.4; }
+  .msg.ok { color:#2e7d32; font-weight:600; }
+  .msg.err { color:#c62828; font-weight:600; }
+  @media (prefers-color-scheme: dark) { .msg.ok{color:#81c784;} .msg.err{color:#ef9a9a;} }
+  .timer { font-size:14px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .hidden { display:none !important; }
+  .ring-anim { animation:shake .5s ease; }
+  @keyframes shake { 0%,100%{transform:rotate(0)} 20%{transform:rotate(-12deg)} 40%{transform:rotate(10deg)} 60%{transform:rotate(-7deg)} 80%{transform:rotate(4deg)} }
+</style>
+</head>
+<body>
+<main>
+  <p class="where" id="where">Kapı zili</p>
+  <h1 id="title">Zil</h1>
+  <button id="ring" type="button"><span class="ico" id="ico">🔔</span><span>ZİLE BAS</span></button>
+  <p class="msg" id="msg"></p>
+  <p class="timer" id="timer"></p>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var TTL = 3 * 60 * 1000;       // oturum süresi: 3 dakika
+  var COOLDOWN = 15 * 1000;      // art arda basma beklemesi
+  var $ = function (id) { return document.getElementById(id); };
+
+  var btn = $('ring'), msg = $('msg'), timer = $('timer');
+  var params = new URLSearchParams(location.hash.replace(/^#/, ''));
+  var topic = params.get('t') || '';
+  var name = (params.get('n') || 'Zil').slice(0, 60);
+  var server = params.get('s') || 'https://ntfy.sh';
+
+  var validTopic = /^[A-Za-z0-9_-]{8,64}$/.test(topic);
+  var validServer = /^https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/.test(server);
+
+  $('title').textContent = name;
+  document.title = name + ' – Kim_O';
+
+  function say(text, cls) { msg.textContent = text; msg.className = 'msg' + (cls ? ' ' + cls : ''); }
+
+  function wipe() {
+    // Sayfadaki tüm izleri sil: saklanan süre + adres çubuğundaki kod
+    try { localStorage.removeItem('zil_start_' + topic); } catch (e) {}
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    topic = '';
+  }
+
+  if (!validTopic || !validServer) {
+    btn.classList.add('hidden');
+    $('where').classList.add('hidden');
+    $('title').textContent = 'Geçersiz bağlantı';
+    say('Lütfen kapıdaki QR kodu tekrar okutun.', 'err');
+    return;
+  }
+
+  // Oturum başlangıcı: 3 dakika içinde yenilenirse süre devam eder
+  var key = 'zil_start_' + topic;
+  var start = Date.now();
+  try {
+    var old = parseInt(localStorage.getItem(key) || '0', 10);
+    if (old && Date.now() - old < TTL && Date.now() >= old) { start = old; }
+    else { localStorage.setItem(key, String(start)); }
+  } catch (e) {}
+
+  var cooldownUntil = 0;
+  var sending = false;
+
+  function expire() {
+    clearInterval(tick);
+    btn.classList.add('hidden');
+    timer.textContent = '';
+    wipe();
+    say('Süre doldu. Tekrar zil çalmak için QR kodu yeniden okutun.');
+  }
+
+  function refresh() {
+    var left = TTL - (Date.now() - start);
+    if (left <= 0) { expire(); return; }
+    var s = Math.ceil(left / 1000);
+    timer.textContent = 'Kalan süre ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    var cd = cooldownUntil - Date.now();
+    if (cd > 0) {
+      btn.disabled = true;
+    } else if (!sending) {
+      btn.disabled = false;
+    }
+  }
+  var tick = setInterval(refresh, 250);
+  refresh();
+
+  btn.addEventListener('click', function () {
+    if (sending || Date.now() < cooldownUntil || !topic) return;
+    sending = true; btn.disabled = true;
+    say('Gönderiliyor…');
+    // Gövde: "zil <oturumun açılışından beri geçen saniye>" (saat farkından etkilenmez)
+    var elapsed = Math.max(0, Math.floor((Date.now() - start) / 1000));
+    fetch(server + '/' + encodeURIComponent(topic), { method: 'POST', body: 'zil ' + elapsed })
+      .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); })
+      .then(function () {
+        cooldownUntil = Date.now() + COOLDOWN;
+        say('Zil çalındı ✓ Lütfen bekleyin.', 'ok');
+        if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
+        var ico = $('ico'); ico.classList.remove('ring-anim'); void ico.offsetWidth; ico.classList.add('ring-anim');
+      })
+      .catch(function () {
+        say('Gönderilemedi. İnternetinizi kontrol edip tekrar deneyin.', 'err');
+      })
+      .then(function () { sending = false; refresh(); });
+  });
+})();
+</script>
+</body>
+</html>
