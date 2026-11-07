@@ -37,6 +37,18 @@
   .msg.err { color:#c62828; font-weight:600; }
   @media (prefers-color-scheme: dark) { .msg.ok{color:#81c784;} .msg.err{color:#ef9a9a;} }
   .timer { font-size:14px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  #note {
+    width:100%; max-width:320px; margin:0 0 22px; padding:12px 14px; resize:none;
+    border:1px solid rgba(122,101,82,.4); border-radius:14px; background:transparent; color:var(--fg);
+    font:inherit; font-size:16px; line-height:1.35;
+  }
+  #note:focus { outline:2px solid var(--accent); border-color:transparent; }
+  .replies { margin:14px 0 0; text-align:left; }
+  .reply {
+    margin:8px 0; padding:12px 14px; border-radius:14px; font-size:17px; line-height:1.35;
+    background:rgba(46,125,50,.12); border:1px solid rgba(46,125,50,.35); word-break:break-word;
+  }
+  .reply b { display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:2px; }
   .hidden { display:none !important; }
   .ring-anim { animation:shake .5s ease; }
   @keyframes shake { 0%,100%{transform:rotate(0)} 20%{transform:rotate(-12deg)} 40%{transform:rotate(10deg)} 60%{transform:rotate(-7deg)} 80%{transform:rotate(4deg)} }
@@ -46,9 +58,11 @@
 <main>
   <p class="where" id="where">Kapı zili</p>
   <h1 id="title">Zil</h1>
+  <textarea id="note" rows="2" maxlength="200" placeholder="İsterseniz not yazın (örn. Kargo getirdim)"></textarea>
   <button id="ring" type="button"><span class="ico" id="ico">🔔</span><span>ZİLE BAS</span></button>
   <p class="msg" id="msg"></p>
   <p class="timer" id="timer"></p>
+  <div class="replies hidden" id="replies" aria-live="polite"></div>
 </main>
 
 <script>
@@ -59,6 +73,7 @@
   var $ = function (id) { return document.getElementById(id); };
 
   var btn = $('ring'), msg = $('msg'), timer = $('timer');
+  var noteEl = $('note'), repliesEl = $('replies');
   var params = new URLSearchParams(location.hash.replace(/^#/, ''));
   var topic = params.get('t') || '';
   var name = (params.get('n') || 'Zil').slice(0, 60);
@@ -99,8 +114,54 @@
   var cooldownUntil = 0;
   var sending = false;
 
+  // Bu ziyaretçiye özel rastgele kimlik: ev sahibinin yanıtı yalnızca bu oturuma gelir
+  var sid = (function () {
+    var s = '', i;
+    try {
+      var a = new Uint8Array(9);
+      (window.crypto || window.msCrypto).getRandomValues(a);
+      for (i = 0; i < a.length; i++) s += (a[i] % 36).toString(36);
+    } catch (e) {
+      for (i = 0; i < 9; i++) s += Math.floor(Math.random() * 36).toString(36);
+    }
+    return s;
+  })();
+
+  var es = null, seenIds = {};
+  function stopReplies() { if (es) { try { es.close(); } catch (e) {} es = null; } }
+  function addReply(text) {
+    repliesEl.classList.remove('hidden');
+    var p = document.createElement('div');
+    p.className = 'reply';
+    var who = document.createElement('b');
+    who.textContent = 'Ev sahibi';
+    var t = document.createElement('span');
+    t.textContent = text;
+    p.appendChild(who); p.appendChild(t);
+    repliesEl.appendChild(p);
+  }
+  function startReplies() {
+    if (es || !window.EventSource || topic.length + sid.length + 1 > 64) return;
+    try {
+      es = new EventSource(server + '/' + topic + '-' + sid + '/sse?since=all');
+      es.onmessage = function (ev) {
+        try {
+          var d = JSON.parse(ev.data);
+          if (d.event !== 'message' || seenIds[d.id]) return;
+          seenIds[d.id] = 1;
+          var t = String(d.message || '');
+          try { var j = JSON.parse(t); if (j && j.r) t = String(j.r); } catch (e) {}
+          addReply(t.slice(0, 300));
+          if (navigator.vibrate) { try { navigator.vibrate(120); } catch (e) {} }
+        } catch (e) {}
+      };
+    } catch (e) {}
+  }
+
   function expire() {
     clearInterval(tick);
+    stopReplies();
+    noteEl.classList.add('hidden');
     btn.classList.add('hidden');
     timer.textContent = '';
     wipe();
@@ -128,11 +189,15 @@
     say('Gönderiliyor…');
     // Gövde: "zil <oturumun açılışından beri geçen saniye>" (saat farkından etkilenmez)
     var elapsed = Math.max(0, Math.floor((Date.now() - start) / 1000));
-    fetch(server + '/' + encodeURIComponent(topic), { method: 'POST', body: 'zil ' + elapsed })
+    var noteText = (noteEl.value || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    var payload = JSON.stringify({ v: 1, e: elapsed, s: sid, n: noteText });
+    fetch(server + '/' + encodeURIComponent(topic), { method: 'POST', body: payload })
       .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); })
       .then(function () {
         cooldownUntil = Date.now() + COOLDOWN;
         say('Zil çalındı ✓ Lütfen bekleyin.', 'ok');
+        noteEl.value = '';
+        startReplies();
         if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
         var ico = $('ico'); ico.classList.remove('ring-anim'); void ico.offsetWidth; ico.classList.add('ring-anim');
       })
