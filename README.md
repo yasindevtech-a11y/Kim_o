@@ -55,6 +55,26 @@ Firebase yok, kendi sunucunuz yok, hesap yok. Ücretsizdir.
 
 ---
 
+## Not bırakma ve yanıt (iki yönlü)
+
+- Ziyaretçi sayfasında zile basmadan önce isteğe bağlı kısa bir **not** yazılabilir (en fazla 200 karakter, örn. "Kargo getirdim").
+- Not, zil çalarken ekranda ve bildirimde görünür.
+- Ev sahibi aynı ekrandan **hazır yanıt** (Geliyorum / Bir dakika bekleyin / Evde yokuz) ya da kendi yazdığı yanıtı gönderebilir.
+  Yanıt, ziyaretçinin açık sayfasında anında görünür.
+- Her ziyaretçiye ayrı rastgele bir kimlik verilir. Yanıt yalnızca o ziyaretçinin sayfasına gider; aynı QR'ı okutan başka biri görmez.
+- Notlar ve yanıtlar sunucuda saklanmaz. Sayfa kapanınca/3 dakika dolunca ziyaretçi tarafında silinir; ntfy mesajları geçici
+  olarak (yaklaşık 12 saat) tutabilir.
+
+## Sayfa açılmıyorsa (404 hatası)
+
+QR okutunca "404" çıkıyorsa GitHub Pages henüz açık değildir:
+1. Repoda **Settings → Pages** bölümüne girin.
+2. **Source**: *Deploy from a branch*, **Branch**: `main`, klasör **/docs** seçip **Save** deyin.
+3. 1–2 dakika bekleyin, sonra sayfa adresini tarayıcıda doğrudan açıp deneyin
+   (`https://KULLANICI.github.io/REPO/`). Açıldığında "Zil" sayfası görünmelidir; bağlantı kodu olmadan açılırsa
+   "Geçersiz bağlantı" yazması normaldir.
+4. Repo **Public** olmalıdır (ücretsiz hesapta Pages için gereklidir).
+
 ## Başkaları kullanınca (veri ve gizlilik)
 
 - Her kullanıcı APK'yı kurar, kendi zillerini ekler ve adlandırır (Ev kapısı, Araba, Köydeki ev…).
