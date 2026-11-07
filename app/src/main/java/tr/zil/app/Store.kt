@@ -71,7 +71,9 @@ object Store {
     /** Kullanıcı elle girmediyse derlemeye gömülü varsayılan sayfa adresi kullanılır. */
     fun pageUrl(c: Context): String {
         val saved = (prefs(c).getString("pageUrl", "") ?: "").trim()
-        return if (saved.isNotEmpty()) saved else BuildConfig.DEFAULT_PAGE_URL
+        // "@" içeren (e-posta gibi) ya da alan adı olmayan değerleri kabul etme
+        val valid = Regex("^(https?://)?[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(:\\d+)?(/[^\\s@]*)?$").matches(saved)
+        return if (saved.isNotEmpty() && valid) saved else BuildConfig.DEFAULT_PAGE_URL
     }
     fun setPageUrl(c: Context, v: String) = prefs(c).edit().putString("pageUrl", v.trim()).apply()
 

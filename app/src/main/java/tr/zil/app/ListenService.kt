@@ -243,26 +243,42 @@ class ListenService : Service() {
         val nowSec = (System.currentTimeMillis() + offsetMs) / 1000
         if (nowSec - time > MAX_AGE_SEC) return
 
-        // Ziyaretçi sayfası "zil <saniye>" yollar: sayfanın açılışından bu yana geçen süre.
-        // 3 dakikayı aşmışsa (sayfa süresi dolmuş olmalıydı) zili çalma.
-        val parts = o.optString("message").trim().split(" ")
-        val elapsed = parts.getOrNull(1)?.toLongOrNull()
+        // Ziyaretçi sayfası JSON yollar: {"v":1,"e":<sayfa açılalı sn>,"s":<ziyaretçi kimliği>,"n":<not>}
+        // Eski sürüm sayfalar "zil <sn>" yollar; ikisi de desteklenir.
+        val raw = o.optString("message").trim()
+        var elapsed: Long? = null
+        var sid = ""
+        var note = ""
+        if (raw.startsWith("{")) {
+            try {
+                val j = JSONObject(raw)
+                if (j.has("e")) elapsed = j.optLong("e")
+                val s = j.optString("s")
+                if (Regex("^[a-z0-9]{6,20}$").matches(s)) sid = s
+                note = j.optString("n").trim().take(200)
+            } catch (_: Exception) {
+            }
+        } else {
+            elapsed = raw.split(" ").getOrNull(1)?.toLongOrNull()
+        }
+        // 3 dakikayı aşmış oturumda zil çalma
         if (elapsed != null && elapsed > MAX_SESSION_SEC) return
 
         val bell = Store.bells(this).firstOrNull { it.topic == topic && it.enabled } ?: return
 
+        // Notlu mesajlar her zaman gösterilir; notsuz art arda basışlar 10 sn içinde tek sayılır
         val last = lastRing[topic] ?: 0L
-        if (nowSec - last < MIN_GAP_SEC) return
+        if (note.isEmpty() && nowSec - last < MIN_GAP_SEC) return
         lastRing[topic] = nowSec
 
-        handler.post { ring(bell.name) }
+        handler.post { ring(bell.name, topic, sid, note) }
     }
 
     // ---------------------------------------------------------------- zil
 
-    private fun ring(name: String) {
+    private fun ring(name: String, topic: String, sid: String, note: String) {
         startSound()
-        showAlert(name)
+        showAlert(name, topic, sid, note)
     }
 
     private fun startSound() {
@@ -338,11 +354,14 @@ class ListenService : Service() {
         sendBroadcast(Intent(AlertActivity.ACTION_CLOSE).setPackage(packageName))
     }
 
-    private fun showAlert(name: String) {
+    private fun showAlert(name: String, topic: String, sid: String, note: String) {
         val full = Intent(this, AlertActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra("name", name)
             putExtra("time", System.currentTimeMillis())
+            putExtra("topic", topic)
+            putExtra("sid", sid)
+            putExtra("note", note)
         }
         val fullPi = PendingIntent.getActivity(
             this, 100, full, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -359,7 +378,8 @@ class ListenService : Service() {
         val n = Notification.Builder(this, CH_ALERT)
             .setSmallIcon(R.drawable.ic_bell)
             .setContentTitle("🔔 $name")
-            .setContentText("Biri zile bastı")
+            .setContentText(if (note.isNotEmpty()) note else "Biri zile bastı")
+            .setStyle(Notification.BigTextStyle().bigText(if (note.isNotEmpty()) note else "Biri zile bastı"))
             .setCategory(Notification.CATEGORY_ALARM)
             .setAutoCancel(true)
             .setContentIntent(fullPi)
