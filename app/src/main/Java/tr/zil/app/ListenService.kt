@@ -72,7 +72,13 @@ class ListenService : Service() {
             stopRing()
             return START_STICKY
         }
-        goForeground()
+        try {
+            goForeground()
+        } catch (e: Throwable) {
+            CrashLog.save(this, "ListenService.goForeground", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         restartListener()
         return START_STICKY
     }
@@ -145,7 +151,13 @@ class ListenService : Service() {
         val gen = generation
         currentConn?.disconnect()
         worker?.interrupt()
-        worker = Thread { listenLoop(gen) }.also {
+        worker = Thread {
+            try {
+                listenLoop(gen)
+            } catch (e: Throwable) {
+                CrashLog.save(this, "listenLoop", e)
+            }
+        }.also {
             it.isDaemon = true
             it.start()
         }

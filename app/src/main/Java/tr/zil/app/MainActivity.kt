@@ -106,22 +106,84 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------ ekran
 
+    private var ready = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        buildUi()
-        render()
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+
+        // Önceki açılışta çökme olduysa hatayı göster
+        val crash = CrashLog.file(this)
+        if (crash.exists()) {
+            showCrash(try { crash.readText() } catch (_: Exception) { "(hata dosyası okunamadı)" })
+            return
         }
-        if (Store.enabled(this) && Store.bells(this).isNotEmpty()) ServiceCtl.start(this)
+
+        try {
+            buildUi()
+            render()
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+            }
+            if (Store.enabled(this) && Store.bells(this).isNotEmpty()) ServiceCtl.start(this)
+            ready = true
+        } catch (e: Throwable) {
+            CrashLog.save(this, "MainActivity.onCreate", e)
+            showCrash(try { CrashLog.file(this).readText() } catch (_: Exception) { e.toString() })
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        if (!ready) return
         refreshWarnings()
         handler.post(ticker)
+    }
+
+    private fun showCrash(text: String) {
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.setPadding(dp(16), dp(16), dp(16), dp(16))
+        root.fitsSystemWindows = true
+
+        val h = TextView(this)
+        h.text = "Uygulama bir hata verdi"
+        h.textSize = 20f
+        h.setTypeface(null, Typeface.BOLD)
+        h.setTextColor(RED)
+        root.addView(h)
+
+        val info = TextView(this)
+        info.text = "Aşağıdaki yazıyı WhatsApp ile gönderin, hemen düzeltelim."
+        info.textSize = 14f
+        info.setTextColor(TEXT)
+        info.setPadding(0, dp(6), 0, dp(10))
+        root.addView(info)
+
+        val body = TextView(this)
+        body.text = text
+        body.textSize = 11f
+        body.typeface = Typeface.MONOSPACE
+        body.setTextIsSelectable(true)
+        val sv = ScrollView(this)
+        sv.addView(body)
+        root.addView(sv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        root.addView(
+            button("Hatayı WhatsApp ile gönder", true) {
+                QrCard.shareText(this, "Kim_O hata raporu:\n$text")
+            },
+            LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) }
+        )
+        root.addView(
+            button("Temizle ve yeniden dene", false) {
+                CrashLog.file(this).delete()
+                recreate()
+            },
+            LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
+        )
+        setContentView(root)
     }
 
     override fun onPause() {
