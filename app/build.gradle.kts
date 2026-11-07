@@ -11,8 +11,8 @@ android {
         applicationId = "tr.zil.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.4"
+        versionCode = 5
+        versionName = "1.5"
 
         // Ziyaretçi sayfasının adresi. GitHub Actions derlerken otomatik verir
         // (-PpageUrl=...), kullanıcı ayrıca bir şey girmek zorunda kalmaz.
