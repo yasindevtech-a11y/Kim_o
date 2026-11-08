@@ -1,75 +1,55 @@
-import java.io.FileInputStream
-import java.util.Properties
+name: APK derle
 
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:
 
-// GitHub Actions ve lokal ortamda güvenli özellik/AdMob okuma
-val localProperties = Properties()
-val localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    FileInputStream(localPropertiesFile).use { stream ->
-        localProperties.load(stream)
-    }
-}
+permissions:
+  contents: write
 
-// GitHub Actions'dan gelen pageUrl parametresini yakala
-val pageUrlProperty = if (project.hasProperty("pageUrl")) {
-    project.property("pageUrl") as String
-} else {
-    "https://yasindevtech-a11y.github.io/Kim_o/"
-}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-android {
-    namespace = "com.yasin.kimo"
-    compileSdk = 34
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-    defaultConfig {
-        applicationId = "com.yasin.kimo"
-        minSdk = 24
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
-        // Ziyaretçi sayfası adresini BuildConfig'e otomatik göm
-        buildConfigField("String", "PAGE_URL", "\"$pageUrlProperty\"")
-    }
+      - name: SDK lisanslarını kabul et
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-    }
-    
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+      - name: APK derle (ziyaretçi sayfası adresi otomatik gömülür)
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          if [ "${REPO,,}" = "$OWNER.github.io" ]; then
+            PAGE="https://$OWNER.github.io/"
+          else
+            PAGE="https://$OWNER.github.io/$REPO/"
+          fi
+          echo "Sayfa adresi: $PAGE"
+          gradle assembleDebug --no-daemon -PpageUrl="$PAGE"
 
-    buildFeatures {
-        buildConfig = true
-    }
-}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zil-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
 
-dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-}
+      # APK'yı telefondan kolayca indirmek için "Releases" sayfasına koyar
+      - name: Release oluştur
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Kim_O v${{ github.run_number }}
+          files: app/build/outputs/apk/debug/app-debug.apk
