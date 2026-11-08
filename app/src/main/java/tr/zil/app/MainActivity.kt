@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -21,11 +22,14 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
@@ -45,10 +49,16 @@ class MainActivity : Activity() {
     private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
     private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 
+    private val REQ_RINGTONE = 77
+
     private lateinit var warnBox: LinearLayout
     private lateinit var listBox: LinearLayout
+    private lateinit var adBox: LinearLayout
     private lateinit var statusView: TextView
     private lateinit var master: Switch
+
+    // Telefondan zil sesi seçilince sonucu bekleyen işlev
+    private var onSoundPicked: ((String) -> Unit)? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
@@ -99,8 +109,8 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(msg)
-            .setPositiveButton("Evet") { _, _ -> onYes() }
-            .setNegativeButton("Vazgeç", null)
+            .setPositiveButton(L.t("Evet")) { _, _ -> onYes() }
+            .setNegativeButton(L.t("Vazgeç"), null)
             .show()
     }
 
@@ -120,6 +130,7 @@ class MainActivity : Activity() {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
             }
             if (Store.enabled(this) && Store.bells(this).isNotEmpty()) ServiceCtl.start(this)
+            Ads.setup(this, adBox)
             ready = true
         } catch (e: Throwable) {
             CrashLog.save(this, "MainActivity.onCreate", e)
@@ -131,6 +142,7 @@ class MainActivity : Activity() {
         super.onResume()
         if (!ready) return
         refreshWarnings()
+        handler.removeCallbacks(ticker)
         handler.post(ticker)
         try {
             getSharedPreferences("zil_boot", Context.MODE_PRIVATE).edit().putBoolean("starting", false).apply()
@@ -138,14 +150,39 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun onPause() {
+        handler.removeCallbacks(ticker)
+        Sounds.stopPreview()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(ticker)
+        Sounds.stopPreview()
+        if (::adBox.isInitialized) Ads.destroy(adBox)
+        super.onDestroy()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_RINGTONE && resultCode == RESULT_OK) {
+            val uri: Uri? = if (Build.VERSION.SDK_INT >= 33) {
+                data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+            } else {
+                data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            }
+            if (uri != null) onSoundPicked?.invoke("u:$uri")
+        }
+    }
+
     private fun buildUi() {
         val scroll = ScrollView(this)
         scroll.isFillViewport = true
-        scroll.fitsSystemWindows = true
 
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
-        root.setPadding(dp(16), dp(12), dp(16), dp(32))
+        root.setPadding(dp(16), dp(12), dp(16), dp(24))
         scroll.addView(root, ViewGroup.LayoutParams(MATCH, WRAP))
 
         // Başlık satırı
@@ -158,7 +195,7 @@ class MainActivity : Activity() {
         title.setTypeface(null, Typeface.BOLD)
         title.setTextColor(ORANGE_D)
         head.addView(title, LinearLayout.LayoutParams(0, WRAP, 1f))
-        head.addView(button("Ayarlar", false) { settingsDialog() })
+        head.addView(button(L.t("Ayarlar"), false) { settingsDialog() })
         root.addView(head)
 
         // Ana anahtar kartı
@@ -170,7 +207,7 @@ class MainActivity : Activity() {
         val left = LinearLayout(this)
         left.orientation = LinearLayout.VERTICAL
         val t1 = TextView(this)
-        t1.text = "Zilleri dinle"
+        t1.text = L.t("Zilleri dinle")
         t1.textSize = 18f
         t1.setTypeface(null, Typeface.BOLD)
         t1.setTextColor(TEXT)
@@ -192,11 +229,22 @@ class MainActivity : Activity() {
         listBox.orientation = LinearLayout.VERTICAL
         root.addView(listBox, LinearLayout.LayoutParams(MATCH, WRAP))
 
-        val add = button("+  Yeni zil ekle", true) { editDialog(null) }
+        val add = button(L.t("+  Yeni zil ekle"), true) { editDialog(null) }
         add.textSize = 16f
         root.addView(add, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(18) })
 
-        setContentView(scroll)
+        // Alt kısım: reklam alanı (onay alınmadan ya da hata olursa boş kalır)
+        adBox = LinearLayout(this)
+        adBox.orientation = LinearLayout.VERTICAL
+        adBox.gravity = Gravity.CENTER_HORIZONTAL
+
+        val outer = LinearLayout(this)
+        outer.orientation = LinearLayout.VERTICAL
+        outer.setBackgroundColor(Color.parseColor("#F5F5F5"))
+        outer.fitsSystemWindows = true
+        outer.addView(scroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        outer.addView(adBox, LinearLayout.LayoutParams(MATCH, WRAP))
+        setContentView(outer)
     }
 
     private fun render() {
@@ -214,7 +262,7 @@ class MainActivity : Activity() {
         val bells = Store.bells(this)
         if (bells.isEmpty()) {
             val empty = TextView(this)
-            empty.text = "Henüz zil yok.\nEv kapısı, bahçe, araba… istediğiniz kadar zil ekleyin; her birinin ayrı QR kodu olur."
+            empty.text = L.t("Henüz zil yok.\nEv kapısı, bahçe, araba… istediğiniz kadar zil ekleyin; her birinin ayrı QR kodu olur.")
             empty.textSize = 15f
             empty.setTextColor(MUTED)
             empty.setPadding(dp(4), dp(24), dp(4), dp(8))
@@ -228,19 +276,19 @@ class MainActivity : Activity() {
         val n = Store.bells(this).count { it.enabled }
         when {
             !Store.enabled(this) -> {
-                statusView.text = "Kapalı — zil çalmaz"
+                statusView.text = L.t("Kapalı — zil çalmaz")
                 statusView.setTextColor(RED)
             }
             n == 0 -> {
-                statusView.text = "Aktif zil yok"
+                statusView.text = L.t("Aktif zil yok")
                 statusView.setTextColor(MUTED)
             }
             ListenService.connected -> {
-                statusView.text = "● Dinleniyor • $n zil aktif"
+                statusView.text = L.f("● Dinleniyor • %d zil aktif", n)
                 statusView.setTextColor(GREEN)
             }
             else -> {
-                statusView.text = "○ Bağlanıyor… • $n zil aktif"
+                statusView.text = L.f("○ Bağlanıyor… • %d zil aktif", n)
                 statusView.setTextColor(MUTED)
             }
         }
@@ -250,32 +298,45 @@ class MainActivity : Activity() {
         warnBox.removeAllViews()
 
         if (Store.pageUrl(this).isBlank()) {
-            warn("Önce ziyaretçi sayfasının adresini girin. QR kodlar bu adrese göre oluşur.", "Ayarlar") {
+            warn(L.t("Önce ziyaretçi sayfasının adresini girin. QR kodlar bu adrese göre oluşur."), L.t("Ayarlar")) {
                 settingsDialog()
             }
         }
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            warn("Bildirim izni kapalı. Uyarı ekranı görünmez.", "İzin ver") {
+            warn(L.t("Bildirim izni kapalı. Uyarı ekranı görünmez."), L.t("İzin ver")) {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
             }
         }
         val pm = getSystemService(PowerManager::class.java)
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-            warn("Pil tasarrufu uygulamayı uyutabilir. Zilin her zaman çalışması için kısıtlamayı kaldırın.", "Kaldır") {
-                startActivity(
-                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
-                )
+            warn(
+                L.t("Pil tasarrufu uygulamayı uyutabilir. Açılan listede Kim_O'yu bulup \"Kısıtlama yok\" ya da \"Optimize etme\" seçin."),
+                L.t("Ayarı aç")
+            ) {
+                try {
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                } catch (_: Throwable) {
+                    try {
+                        startActivity(
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                        )
+                    } catch (_: Throwable) {
+                    }
+                }
             }
         }
         if (Build.VERSION.SDK_INT >= 34) {
             val nm = getSystemService(NotificationManager::class.java)
             if (!nm.canUseFullScreenIntent()) {
-                warn("Kilit ekranında tam ekran uyarı kapalı.", "Aç") {
-                    startActivity(
-                        Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName"))
-                    )
+                warn(L.t("Kilit ekranında tam ekran uyarı kapalı."), L.t("Aç")) {
+                    try {
+                        startActivity(
+                            Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName"))
+                        )
+                    } catch (_: Throwable) {
+                    }
                 }
             }
         }
@@ -308,12 +369,22 @@ class MainActivity : Activity() {
         val top = LinearLayout(this)
         top.orientation = LinearLayout.HORIZONTAL
         top.gravity = Gravity.CENTER_VERTICAL
+
+        val nameBox = LinearLayout(this)
+        nameBox.orientation = LinearLayout.VERTICAL
         val name = TextView(this)
         name.text = b.name
         name.textSize = 19f
         name.setTypeface(null, Typeface.BOLD)
         name.setTextColor(TEXT)
-        top.addView(name, LinearLayout.LayoutParams(0, WRAP, 1f))
+        nameBox.addView(name)
+        val snd = TextView(this)
+        snd.text = "🔊 " + Sounds.label(this, b.sound)
+        snd.textSize = 13f
+        snd.setTextColor(MUTED)
+        nameBox.addView(snd)
+        top.addView(nameBox, LinearLayout.LayoutParams(0, WRAP, 1f))
+
         val sw = Switch(this)
         sw.isChecked = b.enabled
         sw.setOnCheckedChangeListener { _, on ->
@@ -329,16 +400,16 @@ class MainActivity : Activity() {
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
         val lp = { LinearLayout.LayoutParams(0, WRAP, 1f).apply { setMargins(dp(3), 0, dp(3), 0) } }
-        row.addView(button("QR / Paylaş", true) { qrDialog(b) }, lp())
-        row.addView(button("Düzenle", false) { editDialog(b) }, lp())
-        row.addView(button("Test", false) { testRing(b) }, lp())
+        row.addView(button(L.t("QR / Paylaş"), true) { qrDialog(b) }, lp())
+        row.addView(button(L.t("Düzenle"), false) { editDialog(b) }, lp())
+        row.addView(button(L.t("Test"), false) { testRing(b) }, lp())
         card.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(12) })
         return card
     }
 
     private fun testRing(b: Bell) {
         if (!Store.enabled(this)) {
-            toast("Önce üstteki \"Zilleri dinle\" anahtarını açın")
+            toast(L.t("Önce üstteki \"Zilleri dinle\" anahtarını açın"))
             return
         }
         val server = Store.server(this)
@@ -357,9 +428,55 @@ class MainActivity : Activity() {
                 false
             }
             runOnUiThread {
-                toast(if (ok) "Test zili gönderildi" else "Gönderilemedi — internet var mı?")
+                toast(if (ok) L.t("Test zili gönderildi") else L.t("Gönderilemedi — internet var mı?"))
             }
         }.start()
+    }
+
+    // ------------------------------------------------------------ zil sesi seçimi
+
+    private fun chooseSound(current: String, onChosen: (String) -> Unit) {
+        val specs = ArrayList<String>()
+        val names = ArrayList<String>()
+        for ((code, trName) in Sounds.BUILTIN) {
+            specs.add("b:$code")
+            names.add(L.t(trName))
+        }
+        specs.add(Sounds.PHONE)
+        names.add(L.t("Telefonun zil sesi"))
+        names.add(L.t("Telefondan seç…"))
+
+        var picked = current
+        val dlg = AlertDialog.Builder(this)
+            .setTitle(L.t("Zil sesi"))
+            .setSingleChoiceItems(names.toTypedArray(), specs.indexOf(current)) { d, which ->
+                if (which < specs.size) {
+                    picked = specs[which]
+                    Sounds.preview(this, picked)
+                } else {
+                    Sounds.stopPreview()
+                    onSoundPicked = { spec -> onChosen(spec) }
+                    val i = Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
+                    i.putExtra(
+                        RingtoneManager.EXTRA_RINGTONE_TYPE,
+                        RingtoneManager.TYPE_RINGTONE or RingtoneManager.TYPE_NOTIFICATION or RingtoneManager.TYPE_ALARM
+                    )
+                    i.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, false)
+                    i.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                    try {
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(i, REQ_RINGTONE)
+                    } catch (_: Throwable) {
+                        toast(L.t("Bu telefonda ses seçici açılamadı"))
+                    }
+                    d.dismiss()
+                }
+            }
+            .setPositiveButton(L.t("Tamam")) { _, _ -> onChosen(picked) }
+            .setNegativeButton(L.t("İptal"), null)
+            .create()
+        dlg.setOnDismissListener { Sounds.stopPreview() }
+        dlg.show()
     }
 
     // ------------------------------------------------------------ düzenle / ekle
@@ -371,18 +488,39 @@ class MainActivity : Activity() {
 
         val input = EditText(this)
         input.setText(existing?.name ?: "")
-        input.hint = "Örn: Ev kapısı, Araba, Depo"
+        input.hint = L.t("Örn: Ev kapısı, Araba, Depo")
         input.setSingleLine()
         input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         box.addView(input)
 
+        // Zil sesi
+        var sound = existing?.sound ?: Sounds.DEFAULT
+        val soundText = TextView(this)
+        soundText.textSize = 14f
+        soundText.setTextColor(TEXT)
+        soundText.setPadding(0, dp(16), 0, dp(6))
+        fun refreshSound() {
+            soundText.text = "🔊 " + L.t("Zil sesi") + ": " + Sounds.label(this, sound)
+        }
+        refreshSound()
+        box.addView(soundText)
+        box.addView(
+            button(L.t("Sesi değiştir"), false) {
+                chooseSound(sound) { s ->
+                    sound = s
+                    refreshSound()
+                }
+            },
+            LinearLayout.LayoutParams(WRAP, WRAP)
+        )
+
         var dlg: AlertDialog? = null
 
         if (existing != null) {
-            box.addView(linkText("Kodu yenile (eski QR çalışmaz olur)", MUTED) {
+            box.addView(linkText(L.t("Kodu yenile (eski QR çalışmaz olur)"), MUTED) {
                 confirm(
-                    "Yeni kod üretilsin mi?",
-                    "Eski QR kod ve bağlantılar çalışmaz olur. Yeni QR'ı yeniden paylaşmanız gerekir."
+                    L.t("Yeni kod üretilsin mi?"),
+                    L.t("Eski QR kod ve bağlantılar çalışmaz olur. Yeni QR'ı yeniden paylaşmanız gerekir.")
                 ) {
                     val all = Store.bells(this)
                     all.firstOrNull { it.id == existing.id }?.topic = Store.newTopic()
@@ -390,11 +528,14 @@ class MainActivity : Activity() {
                     ServiceCtl.reload(this)
                     dlg?.dismiss()
                     render()
-                    toast("Yeni kod üretildi. QR'ı yeniden paylaşın.")
+                    toast(L.t("Yeni kod üretildi. QR'ı yeniden paylaşın."))
                 }
             })
-            box.addView(linkText("Bu zili sil", RED) {
-                confirm("\"${existing.name}\" silinsin mi?", "Bu zilin QR kodu artık çalışmaz.") {
+            box.addView(linkText(L.t("Bu zili sil"), RED) {
+                confirm(
+                    L.f("\"%s\" silinsin mi?", existing.name),
+                    L.t("Bu zilin QR kodu artık çalışmaz.")
+                ) {
                     val all = Store.bells(this)
                     all.removeAll { it.id == existing.id }
                     Store.saveBells(this, all)
@@ -405,15 +546,18 @@ class MainActivity : Activity() {
             })
         }
 
+        val sv = ScrollView(this)
+        sv.addView(box)
+
         val d = AlertDialog.Builder(this)
-            .setTitle(if (existing == null) "Yeni zil" else "Zili düzenle")
-            .setView(box)
-            .setPositiveButton("Kaydet") { _, _ ->
+            .setTitle(if (existing == null) L.t("Yeni zil") else L.t("Zili düzenle"))
+            .setView(sv)
+            .setPositiveButton(L.t("Kaydet")) { _, _ ->
                 val nm = input.text.toString().trim()
                 if (nm.isEmpty()) {
-                    toast("Bir ad yazın")
+                    toast(L.t("Bir ad yazın"))
                 } else if (existing == null) {
-                    val nb = Store.newBell(nm)
+                    val nb = Store.newBell(nm, sound)
                     val all = Store.bells(this)
                     all.add(nb)
                     Store.saveBells(this, all)
@@ -422,12 +566,14 @@ class MainActivity : Activity() {
                     qrDialog(nb)
                 } else {
                     val all = Store.bells(this)
-                    all.firstOrNull { it.id == existing.id }?.name = nm
+                    val target = all.firstOrNull { it.id == existing.id }
+                    target?.name = nm
+                    target?.sound = sound
                     Store.saveBells(this, all)
                     render()
                 }
             }
-            .setNegativeButton("İptal", null)
+            .setNegativeButton(L.t("İptal"), null)
             .create()
         dlg = d
         d.show()
@@ -438,14 +584,14 @@ class MainActivity : Activity() {
     private fun qrDialog(b: Bell) {
         val link = Store.link(this, b)
         if (link == null) {
-            toast("Önce sayfa adresini girin")
+            toast(L.t("Önce sayfa adresini girin"))
             settingsDialog()
             return
         }
         val bmp = try {
             QrCard.make(link, b.name)
         } catch (_: Exception) {
-            toast("QR kod üretilemedi")
+            toast(L.t("QR kod üretilemedi"))
             return
         }
 
@@ -465,23 +611,24 @@ class MainActivity : Activity() {
             )
         }
 
-        add("WhatsApp ile gönder (QR görseli)", true) {
+        add(L.t("WhatsApp ile gönder (QR görseli)"), true) {
             val f = QrCard.toCacheFile(this, bmp, b.id)
-            QrCard.shareImage(this, QrCard.uri(this, f), "${b.name} – zil QR kodu")
+            QrCard.shareImage(this, QrCard.uri(this, f), "${b.name} – QR")
         }
-        add("WhatsApp ile gönder (bağlantı)", false) {
-            QrCard.shareText(this, "🔔 ${b.name}: zile basmak için bağlantıya dokunun\n$link")
+        add(L.t("WhatsApp ile gönder (bağlantı)"), false) {
+            // Bu metni ziyaretçiler okur: iki dilli
+            QrCard.shareText(this, "🔔 ${b.name}\nZile basmak için / To ring the bell:\n$link")
         }
-        add("Galeriye kaydet (yazdırmak için)", false) {
+        add(L.t("Galeriye kaydet (yazdırmak için)"), false) {
             toast(
-                if (QrCard.saveToGallery(this, bmp, b.name)) "Galeri › Zil klasörüne kaydedildi"
-                else "Kaydedilemedi (Android 10+ gerekir). WhatsApp ile gönderin."
+                if (QrCard.saveToGallery(this, bmp, b.name)) L.t("Galeri › Zil klasörüne kaydedildi")
+                else L.t("Kaydedilemedi (Android 10+ gerekir). WhatsApp ile gönderin.")
             )
         }
-        add("Bağlantıyı kopyala", false) {
+        add(L.t("Bağlantıyı kopyala"), false) {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             cm.setPrimaryClip(ClipData.newPlainText("zil", link))
-            toast("Kopyalandı")
+            toast(L.t("Kopyalandı"))
         }
 
         val sv = ScrollView(this)
@@ -489,54 +636,190 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle(b.name)
             .setView(sv)
-            .setNegativeButton("Kapat", null)
+            .setNegativeButton(L.t("Kapat"), null)
             .show()
     }
 
     // ------------------------------------------------------------ ayarlar
 
+    private fun openListenChannelSettings() {
+        try {
+            startActivity(
+                Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    .putExtra(Settings.EXTRA_CHANNEL_ID, ListenService.CH_LISTEN)
+            )
+        } catch (_: Throwable) {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                )
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun openPrivacy() {
+        val dir = Store.siteDir(this)
+        if (dir == null) {
+            toast(L.t("Sayfa adresi bulunamadı"))
+            return
+        }
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(dir + "gizlilik.html")))
+        } catch (_: Throwable) {
+            toast(L.t("Tarayıcı açılamadı"))
+        }
+    }
+
     private fun settingsDialog() {
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(22), dp(10), dp(22), dp(4))
+        box.setPadding(dp(22), dp(6), dp(22), dp(4))
 
-        fun label(t: String) {
+        fun section(t: String) {
+            val v = TextView(this)
+            v.text = t
+            v.textSize = 13f
+            v.setTypeface(null, Typeface.BOLD)
+            v.setTextColor(ORANGE_D)
+            v.setPadding(0, dp(18), 0, dp(4))
+            box.addView(v)
+        }
+
+        fun note(t: String) {
+            val v = TextView(this)
+            v.text = t
+            v.textSize = 13f
+            v.setTextColor(MUTED)
+            v.setPadding(0, dp(2), 0, dp(6))
+            box.addView(v)
+        }
+
+        // --- Dil
+        section(L.t("Dil"))
+        var langSel = Store.lang(this)
+        val rg = RadioGroup(this)
+        rg.orientation = LinearLayout.VERTICAL
+        val opts = listOf(
+            "auto" to L.t("Otomatik (telefonun dili)"),
+            "tr" to "Türkçe",
+            "en" to "English"
+        )
+        for ((code, label) in opts) {
+            val rb = RadioButton(this)
+            rb.text = label
+            rb.id = View.generateViewId()
+            rb.isChecked = (code == langSel)
+            rb.setOnClickListener { langSel = code }
+            rg.addView(rb)
+        }
+        box.addView(rg)
+
+        // --- Bildirim
+        section(L.t("Bildirim"))
+        note(L.t("Android, arka planda dinleyen uygulamalar için sessiz bir bildirim gösterir. Buradan gizleyebilirsiniz; zil yine çalışır."))
+        box.addView(
+            button(L.t("Kalıcı bildirimi gizle / ayarla"), false) { openListenChannelSettings() },
+            LinearLayout.LayoutParams(WRAP, WRAP)
+        )
+
+        // --- Gizlilik ve reklamlar
+        section(L.t("Gizlilik ve reklamlar"))
+        box.addView(
+            button(L.t("Gizlilik politikası"), false) { openPrivacy() },
+            LinearLayout.LayoutParams(WRAP, WRAP)
+        )
+        if (Ads.privacyOptionsRequired(this)) {
+            box.addView(
+                button(L.t("Reklam gizlilik seçenekleri"), false) { Ads.showPrivacyOptions(this) },
+                LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(8) }
+            )
+        }
+
+        // --- Hakkında
+        section(L.t("Hakkında"))
+        note(
+            "Kim_O ${BuildConfig.VERSION_NAME} • " +
+                if (BuildConfig.ADMOB_LIVE) L.t("Reklamlar: gerçek") else L.t("Reklamlar: test")
+        )
+
+        // --- Gelişmiş (varsayılan olarak gizli)
+        val adv = LinearLayout(this)
+        adv.orientation = LinearLayout.VERTICAL
+        adv.visibility = View.GONE
+
+        val page = EditText(this)
+        val srv = EditText(this)
+
+        fun advLabel(t: String) {
             val v = TextView(this)
             v.text = t
             v.textSize = 13f
             v.setTextColor(MUTED)
             v.setPadding(0, dp(10), 0, 0)
-            box.addView(v)
+            adv.addView(v)
         }
 
-        label("Ziyaretçi sayfası adresi (derlemeden otomatik gelir, genelde değiştirmeyin)")
-        val page = EditText(this)
+        advLabel(L.t("Ziyaretçi sayfası adresi (derlemeden otomatik gelir, genelde değiştirmeyin)"))
         page.setText(Store.pageUrl(this))
-        page.hint = "https://kullanici.github.io/zil/"
+        page.hint = "https://kullanici.github.io/depo/"
         page.setSingleLine()
         page.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        box.addView(page)
+        adv.addView(page)
 
-        label("ntfy sunucusu (genelde değiştirmeyin)")
-        val srv = EditText(this)
+        advLabel(L.t("ntfy sunucusu (genelde değiştirmeyin)"))
         srv.setText(Store.server(this))
         srv.setSingleLine()
         srv.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        box.addView(srv)
+        adv.addView(srv)
+
+        adv.addView(linkText(L.t("Varsayılana sıfırla"), RED) {
+            page.setText(BuildConfig.DEFAULT_PAGE_URL)
+            srv.setText(Store.DEFAULT_SERVER)
+        })
+
+        box.addView(linkText(L.t("Gelişmiş ayarlar ▾"), MUTED) {
+            adv.visibility = if (adv.visibility == View.GONE) View.VISIBLE else View.GONE
+        })
+        box.addView(adv)
 
         val sv = ScrollView(this)
         sv.addView(box)
         AlertDialog.Builder(this)
-            .setTitle("Ayarlar")
+            .setTitle(L.t("Ayarlar"))
             .setView(sv)
-            .setPositiveButton("Kaydet") { _, _ ->
+            .setPositiveButton(L.t("Kaydet")) { _, _ ->
+                var langChanged = false
+                if (langSel != Store.lang(this)) {
+                    Store.setLang(this, langSel)
+                    langChanged = true
+                }
+
+                val p = page.text.toString().trim()
+                if (p.isEmpty() || p == BuildConfig.DEFAULT_PAGE_URL) {
+                    Store.setPageUrl(this, "")
+                } else if (Store.isValidPage(p)) {
+                    Store.setPageUrl(this, p)
+                } else {
+                    toast(L.t("Sayfa adresi geçersiz, eski adres korundu"))
+                }
+
                 val oldServer = Store.server(this)
-                Store.setPageUrl(this, page.text.toString())
-                Store.setServer(this, srv.text.toString().ifBlank { Store.DEFAULT_SERVER })
+                val s = srv.text.toString().trim().trimEnd('/')
+                if (s.isEmpty()) {
+                    Store.setServer(this, Store.DEFAULT_SERVER)
+                } else if (s.startsWith("https://")) {
+                    Store.setServer(this, s)
+                } else {
+                    toast(L.t("Sunucu adresi https:// ile başlamalı, eski adres korundu"))
+                }
                 if (Store.server(this) != oldServer) ServiceCtl.reload(this)
-                render()
+
+                if (langChanged) recreate() else render()
             }
-            .setNegativeButton("İptal", null)
+            .setNegativeButton(L.t("İptal"), null)
             .show()
     }
 }

@@ -12,11 +12,14 @@ data class Bell(
     val id: String,
     var name: String,
     var topic: String,
-    var enabled: Boolean = true
+    var enabled: Boolean = true,
+    var sound: String = Sounds.DEFAULT
 )
 
 object Store {
     const val DEFAULT_SERVER = "https://ntfy.sh"
+
+    private val PAGE_REGEX = Regex("^(https?://)?[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(:\\d+)?(/[^\\s@]*)?$")
 
     private fun prefs(c: Context) = c.getSharedPreferences("zil", Context.MODE_PRIVATE)
 
@@ -31,7 +34,8 @@ object Store {
                         o.getString("id"),
                         o.getString("name"),
                         o.getString("topic"),
-                        o.optBoolean("enabled", true)
+                        o.optBoolean("enabled", true),
+                        o.optString("sound", Sounds.DEFAULT).ifEmpty { Sounds.DEFAULT }
                     )
                 )
             }
@@ -49,12 +53,14 @@ object Store {
                     .put("name", b.name)
                     .put("topic", b.topic)
                     .put("enabled", b.enabled)
+                    .put("sound", b.sound)
             )
         }
         prefs(c).edit().putString("bells", a.toString()).apply()
     }
 
-    fun newBell(name: String) = Bell(UUID.randomUUID().toString(), name, newTopic(), true)
+    fun newBell(name: String, sound: String = Sounds.DEFAULT) =
+        Bell(UUID.randomUUID().toString(), name, newTopic(), true, sound)
 
     /** Tahmin edilemez, rastgele zil kodu (ntfy konu adı). */
     fun newTopic(): String {
@@ -68,13 +74,19 @@ object Store {
     fun enabled(c: Context) = prefs(c).getBoolean("enabled", true)
     fun setEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean("enabled", v).apply()
 
+    /** "auto" (telefonun dili), "tr" veya "en". */
+    fun lang(c: Context): String = prefs(c).getString("lang", "auto") ?: "auto"
+    fun setLang(c: Context, v: String) = prefs(c).edit().putString("lang", v).apply()
+
+    fun isValidPage(s: String) = PAGE_REGEX.matches(s.trim())
+
     /** Kullanıcı elle girmediyse derlemeye gömülü varsayılan sayfa adresi kullanılır. */
     fun pageUrl(c: Context): String {
         val saved = (prefs(c).getString("pageUrl", "") ?: "").trim()
         // "@" içeren (e-posta gibi) ya da alan adı olmayan değerleri kabul etme
-        val valid = Regex("^(https?://)?[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(:\\d+)?(/[^\\s@]*)?$").matches(saved)
-        return if (saved.isNotEmpty() && valid) saved else BuildConfig.DEFAULT_PAGE_URL
+        return if (saved.isNotEmpty() && isValidPage(saved)) saved else BuildConfig.DEFAULT_PAGE_URL
     }
+
     fun setPageUrl(c: Context, v: String) = prefs(c).edit().putString("pageUrl", v.trim()).apply()
 
     fun server(c: Context): String {
@@ -97,6 +109,19 @@ object Store {
         val srv = server(c)
         if (srv != DEFAULT_SERVER) sb.append("&s=").append(URLEncoder.encode(srv, "UTF-8"))
         return sb.toString()
+    }
+
+    /** Sitenin klasör adresi (gizlilik sayfası gibi yan sayfalar için). */
+    fun siteDir(c: Context): String? {
+        var base = pageUrl(c).trim()
+        if (base.isEmpty()) return null
+        if (!base.startsWith("http")) base = "https://$base"
+        val cut = base.indexOfFirst { it == '#' || it == '?' }
+        if (cut >= 0) base = base.substring(0, cut)
+        base = if (base.endsWith(".html")) base.substringBeforeLast('/') + "/"
+        else if (base.endsWith("/")) base
+        else "$base/"
+        return base
     }
 }
 

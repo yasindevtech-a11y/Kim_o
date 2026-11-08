@@ -31,6 +31,7 @@ object CrashLog {
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
+        L.init(this)
 
         // Hata ekranının kendi işleminde bu kancayı kurma (sonsuz döngüyü önler)
         try {

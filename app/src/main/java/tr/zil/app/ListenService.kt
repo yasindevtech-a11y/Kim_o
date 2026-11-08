@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.drawable.Icon
-import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.Handler
@@ -32,7 +31,7 @@ class ListenService : Service() {
     companion object {
         const val ACTION_START = "tr.zil.app.START"
         const val ACTION_STOP_RING = "tr.zil.app.STOP_RING"
-        const val CH_LISTEN = "listen"
+        const val CH_LISTEN = "listen2"   // sessiz (IMPORTANCE_MIN) kanal; eski "listen" kanalı silinir
         const val CH_ALERT = "alert"
         const val NOTIF_LISTEN = 1
 
@@ -96,12 +95,19 @@ class ListenService : Service() {
 
     private fun createChannels() {
         val nm = getSystemService(NotificationManager::class.java)
+        // Kalıcı "dinleniyor" bildirimi: en düşük önem = sessiz, durum çubuğunda simge yok, kilit ekranında gizli
+        try {
+            nm.deleteNotificationChannel("listen")
+        } catch (_: Exception) {
+        }
         nm.createNotificationChannel(
-            NotificationChannel(CH_LISTEN, "Dinleme durumu", NotificationManager.IMPORTANCE_LOW)
-                .apply { setShowBadge(false) }
+            NotificationChannel(CH_LISTEN, L.t("Dinleme durumu"), NotificationManager.IMPORTANCE_MIN).apply {
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+            }
         )
         nm.createNotificationChannel(
-            NotificationChannel(CH_ALERT, "Zil uyarısı", NotificationManager.IMPORTANCE_HIGH).apply {
+            NotificationChannel(CH_ALERT, L.t("Zil uyarısı"), NotificationManager.IMPORTANCE_HIGH).apply {
                 setSound(null, null)
                 enableVibration(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
@@ -119,6 +125,9 @@ class ListenService : Service() {
             .setContentTitle("Kim_O")
             .setContentText(text)
             .setOngoing(true)
+            .setShowWhen(false)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setVisibility(Notification.VISIBILITY_SECRET)
             .setContentIntent(open)
             .build()
     }
@@ -134,9 +143,9 @@ class ListenService : Service() {
 
     private fun statusText(): String {
         val n = Store.bells(this).count { it.enabled }
-        return if (n == 0) "Dinlenecek aktif zil yok"
-        else if (connected) "Dinleniyor • $n zil aktif"
-        else "Bağlanıyor… • $n zil aktif"
+        return if (n == 0) L.t("Dinlenecek aktif zil yok")
+        else if (connected) L.f("Dinleniyor • %d zil aktif", n)
+        else L.f("Bağlanıyor… • %d zil aktif", n)
     }
 
     private fun refreshStatus() {
@@ -249,6 +258,7 @@ class ListenService : Service() {
         var elapsed: Long? = null
         var sid = ""
         var note = ""
+        var vlang = ""
         if (raw.startsWith("{")) {
             try {
                 val j = JSONObject(raw)
@@ -256,6 +266,8 @@ class ListenService : Service() {
                 val s = j.optString("s")
                 if (Regex("^[a-z0-9]{6,20}$").matches(s)) sid = s
                 note = j.optString("n").trim().take(200)
+                val lg = j.optString("l")
+                if (lg == "tr" || lg == "en") vlang = lg
             } catch (_: Exception) {
             }
         } else {
@@ -271,17 +283,17 @@ class ListenService : Service() {
         if (note.isEmpty() && nowSec - last < MIN_GAP_SEC) return
         lastRing[topic] = nowSec
 
-        handler.post { ring(bell.name, topic, sid, note) }
+        handler.post { ring(bell.name, bell.sound, topic, sid, note, vlang) }
     }
 
     // ---------------------------------------------------------------- zil
 
-    private fun ring(name: String, topic: String, sid: String, note: String) {
-        startSound()
-        showAlert(name, topic, sid, note)
+    private fun ring(name: String, sound: String, topic: String, sid: String, note: String, vlang: String) {
+        startSound(sound)
+        showAlert(name, topic, sid, note, vlang)
     }
 
-    private fun startSound() {
+    private fun startSound(sound: String) {
         stopSound()
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -291,19 +303,9 @@ class ListenService : Service() {
         }
 
         try {
-            val mp = MediaPlayer()
-            val afd = resources.openRawResourceFd(R.raw.doorbell)
-            mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-            afd.close()
-            mp.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            mp.isLooping = true
-            mp.prepare()
-            mp.start()
+            // Zile özel seçilen ses (uygulama sesi / telefon zil sesi); açılamazsa Klasik zil
+            val mp = Sounds.create(this, sound, true)
+            mp?.start()
             player = mp
         } catch (_: Exception) {
         }
@@ -354,7 +356,7 @@ class ListenService : Service() {
         sendBroadcast(Intent(AlertActivity.ACTION_CLOSE).setPackage(packageName))
     }
 
-    private fun showAlert(name: String, topic: String, sid: String, note: String) {
+    private fun showAlert(name: String, topic: String, sid: String, note: String, vlang: String) {
         val full = Intent(this, AlertActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra("name", name)
@@ -362,6 +364,7 @@ class ListenService : Service() {
             putExtra("topic", topic)
             putExtra("sid", sid)
             putExtra("note", note)
+            putExtra("vlang", vlang)
         }
         val fullPi = PendingIntent.getActivity(
             this, 100, full, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -372,14 +375,14 @@ class ListenService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val stopAction = Notification.Action.Builder(
-            Icon.createWithResource(this, R.drawable.ic_bell), "Sustur", stopPi
+            Icon.createWithResource(this, R.drawable.ic_bell), L.t("Sustur"), stopPi
         ).build()
 
         val n = Notification.Builder(this, CH_ALERT)
             .setSmallIcon(R.drawable.ic_bell)
             .setContentTitle("🔔 $name")
-            .setContentText(if (note.isNotEmpty()) note else "Biri zile bastı")
-            .setStyle(Notification.BigTextStyle().bigText(if (note.isNotEmpty()) note else "Biri zile bastı"))
+            .setContentText(if (note.isNotEmpty()) note else L.t("Biri zile bastı"))
+            .setStyle(Notification.BigTextStyle().bigText(if (note.isNotEmpty()) note else L.t("Biri zile bastı")))
             .setCategory(Notification.CATEGORY_ALARM)
             .setAutoCancel(true)
             .setContentIntent(fullPi)

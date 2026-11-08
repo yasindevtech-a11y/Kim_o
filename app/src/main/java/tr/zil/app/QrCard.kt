@@ -70,8 +70,9 @@ object QrCard {
             textSize = 52f
         }
         t.textSize = 56f
-        c.drawText("Zile basmak için", w / 2f, 1254f, t)
-        c.drawText("telefon kameranızla okutun", w / 2f, 1320f, s)
+        // Kapıdaki kartı herkes okur: iki dilli
+        c.drawText("Zile basmak için okutun", w / 2f, 1254f, t)
+        c.drawText("Scan to ring the bell", w / 2f, 1320f, s)
         return card
     }
 

@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -41,6 +42,7 @@ class AlertActivity : Activity() {
 
     private var topic = ""
     private var sid = ""
+    private var vlang = ""   // ziyaretçinin dili ("tr", "en" ya da bilinmiyor)
 
     private val closer = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -71,8 +73,16 @@ class AlertActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setShowWhenLocked(true)
-        setTurnScreenOn(true)
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            // Android 8.0: bu iki işlev yok, aynı işi pencere bayraklarıyla yap
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val root = LinearLayout(this).apply {
@@ -96,7 +106,7 @@ class AlertActivity : Activity() {
         root.addView(nameView)
 
         root.addView(TextView(this).apply {
-            text = "Biri zile bastı"
+            text = L.t("Biri zile bastı")
             textSize = 20f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
@@ -132,16 +142,23 @@ class AlertActivity : Activity() {
         // Yanıt alanı (ziyaretçi notla geldiyse veya sayfa açıksa)
         replyBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
-        val quick = listOf("Geliyorum", "Bir dakika bekleyin", "Evde yokuz, sonra gelin")
-        for (q in quick) {
+        val quick = listOf(
+            "Geliyorum" to "I'm coming",
+            "Bir dakika bekleyin" to "Please wait a minute",
+            "Evde yokuz, sonra gelin" to "We're not home, please come back later"
+        )
+        for ((trText, enText) in quick) {
             replyBox.addView(
-                pill(q, false) { sendReply(q) },
+                pill(L.t(trText), false) {
+                    val toEn = if (vlang.isNotEmpty()) vlang == "en" else L.isEn()
+                    sendReply(if (toEn) enText else trText)
+                },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(8) }
             )
         }
 
         val input = EditText(this).apply {
-            hint = "Kendi yanıtınızı yazın"
+            hint = L.t("Kendi yanıtınızı yazın")
             setHintTextColor(Color.parseColor("#FFE0B2"))
             setTextColor(Color.WHITE)
             textSize = 16f
@@ -155,7 +172,7 @@ class AlertActivity : Activity() {
                 .apply { topMargin = dp(12) }
         )
         replyBox.addView(
-            pill("Yanıt gönder", true) {
+            pill(L.t("Yanıt gönder"), true) {
                 val t = input.text.toString()
                 if (t.isNotBlank()) {
                     sendReply(t)
@@ -167,7 +184,7 @@ class AlertActivity : Activity() {
         root.addView(replyBox)
 
         val stop = Button(this).apply {
-            text = "SUSTUR"
+            text = L.t("SUSTUR")
             textSize = 20f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#E65100"))
@@ -192,6 +209,7 @@ class AlertActivity : Activity() {
         val scroll = ScrollView(this).apply {
             isFillViewport = true
             setBackgroundColor(Color.parseColor("#FF6D00"))
+            fitsSystemWindows = true
             addView(root, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         setContentView(scroll)
@@ -209,7 +227,7 @@ class AlertActivity : Activity() {
     }
 
     private fun show(i: Intent?) {
-        nameView.text = i?.getStringExtra("name") ?: "Zil"
+        nameView.text = i?.getStringExtra("name") ?: L.t("Zil")
         val t = i?.getLongExtra("time", System.currentTimeMillis()) ?: System.currentTimeMillis()
         timeView.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(t))
 
@@ -219,6 +237,7 @@ class AlertActivity : Activity() {
 
         topic = i?.getStringExtra("topic") ?: ""
         sid = i?.getStringExtra("sid") ?: ""
+        vlang = i?.getStringExtra("vlang") ?: ""
         // Ziyaretçi kimliği yoksa (eski sayfa / test) yanıt gönderilemez
         replyBox.visibility = if (topic.isEmpty() || sid.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
     }
@@ -243,7 +262,7 @@ class AlertActivity : Activity() {
                 false
             }
             runOnUiThread {
-                Toast.makeText(this, if (ok) "Yanıt gönderildi" else "Gönderilemedi", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, if (ok) L.t("Yanıt gönderildi") else L.t("Gönderilemedi"), Toast.LENGTH_SHORT).show()
             }
         }.start()
 
