@@ -49,6 +49,8 @@
     background:rgba(46,125,50,.12); border:1px solid rgba(46,125,50,.35); word-break:break-word;
   }
   .reply b { display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:2px; }
+  .foot { margin:34px 0 0; font-size:12px; }
+  .foot a { color:var(--muted); }
   .hidden { display:none !important; }
   .ring-anim { animation:shake .5s ease; }
   @keyframes shake { 0%,100%{transform:rotate(0)} 20%{transform:rotate(-12deg)} 40%{transform:rotate(10deg)} 60%{transform:rotate(-7deg)} 80%{transform:rotate(4deg)} }
@@ -59,10 +61,11 @@
   <p class="where" id="where">Kapı zili</p>
   <h1 id="title">Zil</h1>
   <textarea id="note" rows="2" maxlength="200" placeholder="İsterseniz not yazın (örn. Kargo getirdim)"></textarea>
-  <button id="ring" type="button"><span class="ico" id="ico">🔔</span><span>ZİLE BAS</span></button>
+  <button id="ring" type="button"><span class="ico" id="ico">🔔</span><span id="ringLabel">ZİLE BAS</span></button>
   <p class="msg" id="msg"></p>
   <p class="timer" id="timer"></p>
   <div class="replies hidden" id="replies" aria-live="polite"></div>
+  <p class="foot"><a id="priv" href="gizlilik.html" rel="noopener">Gizlilik</a></p>
 </main>
 
 <script>
@@ -72,11 +75,41 @@
   var COOLDOWN = 15 * 1000;      // art arda basma beklemesi
   var $ = function (id) { return document.getElementById(id); };
 
+  // Dil: ziyaretçinin telefon diline göre (Türkçe ya da İngilizce)
+  var I18N = {
+    tr: {
+      where: 'Kapı zili', ring: 'ZİLE BAS', defName: 'Zil', privacy: 'Gizlilik',
+      note: 'İsterseniz not yazın (örn. Kargo getirdim)',
+      invalidTitle: 'Geçersiz bağlantı', invalidMsg: 'Lütfen kapıdaki QR kodu tekrar okutun.',
+      sending: 'Gönderiliyor…', ok: 'Zil çalındı ✓ Lütfen bekleyin.',
+      err: 'Gönderilemedi. İnternetinizi kontrol edip tekrar deneyin.',
+      left: 'Kalan süre', expired: 'Süre doldu. Tekrar zil çalmak için QR kodu yeniden okutun.',
+      owner: 'Ev sahibi'
+    },
+    en: {
+      where: 'Doorbell', ring: 'RING THE BELL', defName: 'Bell', privacy: 'Privacy',
+      note: 'Leave a note if you like (e.g. Package delivery)',
+      invalidTitle: 'Invalid link', invalidMsg: 'Please scan the QR code at the door again.',
+      sending: 'Sending…', ok: 'Bell rung ✓ Please wait.',
+      err: 'Could not send. Check your connection and try again.',
+      left: 'Time left', expired: 'Time is up. Scan the QR code again to ring the bell.',
+      owner: 'Homeowner'
+    }
+  };
+  var first = ((navigator.languages && navigator.languages[0]) || navigator.language || 'tr').toLowerCase();
+  var lang = first.indexOf('tr') === 0 ? 'tr' : 'en';
+  var T = I18N[lang];
+  document.documentElement.lang = lang;
+  $('where').textContent = T.where;
+  $('ringLabel').textContent = T.ring;
+  $('note').placeholder = T.note;
+  $('priv').textContent = T.privacy;
+
   var btn = $('ring'), msg = $('msg'), timer = $('timer');
   var noteEl = $('note'), repliesEl = $('replies');
   var params = new URLSearchParams(location.hash.replace(/^#/, ''));
   var topic = params.get('t') || '';
-  var name = (params.get('n') || 'Zil').slice(0, 60);
+  var name = (params.get('n') || T.defName).slice(0, 60);
   var server = params.get('s') || 'https://ntfy.sh';
 
   var validTopic = /^[A-Za-z0-9_-]{8,64}$/.test(topic);
@@ -97,8 +130,8 @@
   if (!validTopic || !validServer) {
     btn.classList.add('hidden');
     $('where').classList.add('hidden');
-    $('title').textContent = 'Geçersiz bağlantı';
-    say('Lütfen kapıdaki QR kodu tekrar okutun.', 'err');
+    $('title').textContent = T.invalidTitle;
+    say(T.invalidMsg, 'err');
     return;
   }
 
@@ -134,7 +167,7 @@
     var p = document.createElement('div');
     p.className = 'reply';
     var who = document.createElement('b');
-    who.textContent = 'Ev sahibi';
+    who.textContent = T.owner;
     var t = document.createElement('span');
     t.textContent = text;
     p.appendChild(who); p.appendChild(t);
@@ -165,14 +198,14 @@
     btn.classList.add('hidden');
     timer.textContent = '';
     wipe();
-    say('Süre doldu. Tekrar zil çalmak için QR kodu yeniden okutun.');
+    say(T.expired);
   }
 
   function refresh() {
     var left = TTL - (Date.now() - start);
     if (left <= 0) { expire(); return; }
     var s = Math.ceil(left / 1000);
-    timer.textContent = 'Kalan süre ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    timer.textContent = T.left + ' ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
     var cd = cooldownUntil - Date.now();
     if (cd > 0) {
       btn.disabled = true;
@@ -186,23 +219,23 @@
   btn.addEventListener('click', function () {
     if (sending || Date.now() < cooldownUntil || !topic) return;
     sending = true; btn.disabled = true;
-    say('Gönderiliyor…');
+    say(T.sending);
     // Gövde: "zil <oturumun açılışından beri geçen saniye>" (saat farkından etkilenmez)
     var elapsed = Math.max(0, Math.floor((Date.now() - start) / 1000));
     var noteText = (noteEl.value || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-    var payload = JSON.stringify({ v: 1, e: elapsed, s: sid, n: noteText });
+    var payload = JSON.stringify({ v: 1, e: elapsed, s: sid, n: noteText, l: lang });
     fetch(server + '/' + encodeURIComponent(topic), { method: 'POST', body: payload })
       .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); })
       .then(function () {
         cooldownUntil = Date.now() + COOLDOWN;
-        say('Zil çalındı ✓ Lütfen bekleyin.', 'ok');
+        say(T.ok, 'ok');
         noteEl.value = '';
         startReplies();
         if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
         var ico = $('ico'); ico.classList.remove('ring-anim'); void ico.offsetWidth; ico.classList.add('ring-anim');
       })
       .catch(function () {
-        say('Gönderilemedi. İnternetinizi kontrol edip tekrar deneyin.', 'err');
+        say(T.err, 'err');
       })
       .then(function () { sending = false; refresh(); });
   });
