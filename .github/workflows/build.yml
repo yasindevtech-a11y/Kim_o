@@ -1,89 +1,75 @@
-name: APK ve AAB derle
+import java.io.FileInputStream
+import java.util.Properties
 
-on:
-  push:
-    branches: [main, master]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - 'store/**'
-  workflow_dispatch:
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
 
-permissions:
-  contents: write
+// GitHub Actions ve lokal ortamda güvenli özellik/AdMob okuma
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    FileInputStream(localPropertiesFile).use { stream ->
+        localProperties.load(stream)
+    }
+}
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+// GitHub Actions'dan gelen pageUrl parametresini yakala
+val pageUrlProperty = if (project.hasProperty("pageUrl")) {
+    project.property("pageUrl") as String
+} else {
+    "https://yasindevtech-a11y.github.io/Kim_o/"
+}
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+android {
+    namespace = "com.yasin.kimo"
+    compileSdk = 34
 
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.13'
+    defaultConfig {
+        applicationId = "com.yasin.kimo"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
 
-      - name: SDK lisanslarını kabul et
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // Ziyaretçi sayfası adresini BuildConfig'e otomatik göm
+        buildConfigField("String", "PAGE_URL", "\"$pageUrlProperty\"")
+    }
 
-      # Play Store yükleme anahtarı GitHub Secrets'ta tanımlıysa kullanılır, yoksa atlanır
-      - name: Yükleme anahtarını hazırla (varsa)
-        env:
-          KS: ${{ secrets.UPLOAD_KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "$KS" ]; then
-            echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.keystore"
-            echo "UPLOAD_KEYSTORE_PATH=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"
-            echo "Yükleme anahtarı bulundu, AAB bununla imzalanacak."
-          else
-            echo "Yükleme anahtarı tanımlı değil, AAB depodaki anahtarla imzalanacak (yalnızca test için)."
-          fi
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 
-      - name: APK derle (ziyaretçi sayfası adresi otomatik gömülür)
-        env:
-          UPLOAD_STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
-          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
-          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
-        run: |
-          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          REPO="${GITHUB_REPOSITORY#*/}"
-          if [ "${REPO,,}" = "$OWNER.github.io" ]; then
-            PAGE="https://$OWNER.github.io/"
-          else
-            PAGE="https://$OWNER.github.io/$REPO/"
-          fi
-          echo "Sayfa adresi: $PAGE"
-          echo "PAGE=$PAGE" >> "$GITHUB_ENV"
-          gradle assembleDebug --no-daemon -PpageUrl="$PAGE"
+    buildFeatures {
+        buildConfig = true
+    }
+}
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kimo-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-
-      # Play Store paketi (AAB). Hata verirse APK etkilenmez.
-      - name: AAB derle (Play Store için)
-        continue-on-error: true
-        env:
-          UPLOAD_STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
-          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
-          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
-        run: gradle bundleRelease --no-daemon -PpageUrl="$PAGE"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kimo-aab-play-store
-          path: app/build/outputs/bundle/release/app-release.aab
-          if-no-files-found: ignore
-
-      # APK'yı telefondan kolayca indirmek için "Releases" sayfasına koyar
-      - name: Release oluştur
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ github.run_number }}
-          name: Kim_O v${{ github.run_number }}
-          files: app/build/outputs/apk/debug/app-debug.apk
+dependencies {
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.11.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+}
