@@ -34,6 +34,7 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -50,6 +51,7 @@ class MainActivity : Activity() {
     private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 
     private val REQ_RINGTONE = 77
+    private val REQ_IMPORT_IMG = 78
 
     private lateinit var warnBox: LinearLayout
     private lateinit var listBox: LinearLayout
@@ -136,6 +138,23 @@ class MainActivity : Activity() {
             CrashLog.save(this, "MainActivity.onCreate", e)
             throw e
         }
+        // Bağlantıyla açıldıysa, ekran çizildikten sonra içe aktarma penceresini göster
+        val first = intent
+        handler.post { handleIncoming(first) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (ready) handleIncoming(intent)
+    }
+
+    /** kimo://add#t=… bağlantısıyla (ör. aile kodu sayfasındaki düğmeyle) açıldıysa zili içe aktarmayı dener. */
+    private fun handleIncoming(i: Intent?) {
+        if (i == null || i.action != Intent.ACTION_VIEW) return
+        val data = i.dataString ?: return
+        i.data = null   // ekran dönünce aynı bağlantı yeniden işlenmesin
+        handleInvite(data)
     }
 
     override fun onResume() {
@@ -173,6 +192,20 @@ class MainActivity : Activity() {
                 data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
             }
             if (uri != null) onSoundPicked?.invoke("u:$uri")
+        }
+        if (requestCode == REQ_IMPORT_IMG && resultCode == RESULT_OK) {
+            val uri: Uri? = data?.data
+            if (uri == null) {
+                toast(L.t("Görselde QR kod okunamadı"))
+            } else {
+                Thread {
+                    val text = QrReader.decode(this, uri)
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        if (text == null) toast(L.t("Görselde QR kod okunamadı")) else handleInvite(text)
+                    }
+                }.start()
+            }
         }
     }
 
@@ -232,6 +265,10 @@ class MainActivity : Activity() {
         val add = button(L.t("+  Yeni zil ekle"), true) { editDialog(null) }
         add.textSize = 16f
         root.addView(add, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(18) })
+
+        val imp = button(L.t("İçe aktar (aile / yedek kodu)"), false) { importDialog() }
+        imp.textSize = 15f
+        root.addView(imp, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
 
         // Alt kısım: reklam alanı (onay alınmadan ya da hata olursa boş kalır)
         adBox = LinearLayout(this)
@@ -407,12 +444,30 @@ class MainActivity : Activity() {
         return card
     }
 
+    /**
+     * Deneme zili, ziyaretçi sayfasıyla aynı yoldan gider: zilin genel anahtarına şifrelenir, uygulama
+     * özel anahtarla çözer. Böylece "Test" şifreleme zincirinin tamamını sınar. Anahtar yoksa düz "zil".
+     */
+    private fun testBody(b: Bell): String {
+        if (Crypto.isPub(b.pub)) {
+            val plain = JSONObject()
+                .put("e", 0)
+                .put("n", L.t("Test"))
+                .put("l", if (L.isEn()) "en" else "tr")
+                .toString()
+            val boxed = Crypto.encryptVisitor(b.pub, b.topic, plain)
+            if (boxed != null) return boxed
+        }
+        return "zil"
+    }
+
     private fun testRing(b: Bell) {
         if (!Store.enabled(this)) {
             toast(L.t("Önce üstteki \"Zilleri dinle\" anahtarını açın"))
             return
         }
         val server = Store.server(this)
+        val body = testBody(b)
         Thread {
             val ok = try {
                 val c = URL("$server/${b.topic}").openConnection() as HttpURLConnection
@@ -420,7 +475,7 @@ class MainActivity : Activity() {
                 c.doOutput = true
                 c.connectTimeout = 10_000
                 c.readTimeout = 10_000
-                c.outputStream.use { it.write("zil".toByteArray()) }
+                c.outputStream.use { it.write(body.toByteArray()) }
                 val code = c.responseCode
                 c.disconnect()
                 code in 200..299
@@ -520,10 +575,10 @@ class MainActivity : Activity() {
             box.addView(linkText(L.t("Kodu yenile (eski QR çalışmaz olur)"), MUTED) {
                 confirm(
                     L.t("Yeni kod üretilsin mi?"),
-                    L.t("Eski QR kod ve bağlantılar çalışmaz olur. Yeni QR'ı yeniden paylaşmanız gerekir.")
+                    L.t("Eski QR kod, aile/yedek kodu ve bağlantılar çalışmaz olur. Yeni QR'ı yeniden paylaşmanız gerekir.")
                 ) {
                     val all = Store.bells(this)
-                    all.firstOrNull { it.id == existing.id }?.topic = Store.newTopic()
+                    all.firstOrNull { it.id == existing.id }?.let { Store.renew(it) }
                     Store.saveBells(this, all)
                     ServiceCtl.reload(this)
                     dlg?.dismiss()
@@ -604,6 +659,13 @@ class MainActivity : Activity() {
         iv.adjustViewBounds = true
         box.addView(iv, LinearLayout.LayoutParams(MATCH, WRAP))
 
+        val hint = TextView(this)
+        hint.text = L.t("🔒 Notlar ve yanıtlar uçtan uca şifrelidir. Bu kapı kodu yalnızca şifrelemek için gereken genel anahtarı taşır; okutan kişi başkalarının mesajlarını okuyamaz.")
+        hint.textSize = 13f
+        hint.setTextColor(MUTED)
+        hint.setPadding(0, dp(8), 0, 0)
+        box.addView(hint)
+
         fun add(text: String, filled: Boolean, onClick: () -> Unit) {
             box.addView(
                 button(text, filled, onClick),
@@ -630,6 +692,7 @@ class MainActivity : Activity() {
             cm.setPrimaryClip(ClipData.newPlainText("zil", link))
             toast(L.t("Kopyalandı"))
         }
+        add(L.t("🔐 Aile / yedek kodu (gizli)"), false) { familyDialog(b) }
 
         val sv = ScrollView(this)
         sv.addView(box)
@@ -637,6 +700,199 @@ class MainActivity : Activity() {
             .setTitle(b.name)
             .setView(sv)
             .setNegativeButton(L.t("Kapat"), null)
+            .show()
+    }
+
+    // ------------------------------------------------------------ aile / yedek kodu
+
+    /** Zilin özel anahtarını da taşıyan GİZLİ kod: ikinci aile telefonu ya da sıfırlama sonrası geri yükleme için. */
+    private fun familyDialog(b: Bell) {
+        val link = Store.familyLink(this, b)
+        if (link == null) {
+            toast(L.t("Önce sayfa adresini girin"))
+            return
+        }
+        val bmp = try {
+            QrCard.make(link, b.name, true)
+        } catch (_: Exception) {
+            toast(L.t("QR kod üretilemedi"))
+            return
+        }
+
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(18), dp(8), dp(18), dp(4))
+
+        val warn = TextView(this)
+        warn.text = L.t("🔐 GİZLİ: Bu kod zilin özel anahtarını içerir. Kapıya yapıştırmayın, yalnızca aile bireylerine gönderin. Telefon sıfırlanırsa ya da ailedeki biri zili kendi telefonuna eklemek isterse, Kim_O'da \"İçe aktar\" ile bu kodu kullanır. Galeriye kaydederseniz telefonunuzun fotoğraf yedeklemesi bu görseli de yedekleyebilir.")
+        warn.textSize = 13f
+        warn.setTextColor(RED)
+        warn.setPadding(0, 0, 0, dp(8))
+        box.addView(warn)
+
+        val iv = ImageView(this)
+        iv.setImageBitmap(bmp)
+        iv.adjustViewBounds = true
+        box.addView(iv, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        fun add(text: String, filled: Boolean, onClick: () -> Unit) {
+            box.addView(
+                button(text, filled, onClick),
+                LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
+            )
+        }
+
+        add(L.t("WhatsApp ile gönder (QR görseli)"), true) {
+            val f = QrCard.toCacheFile(this, bmp, b.id + "-aile")
+            QrCard.shareImage(this, QrCard.uri(this, f), "${b.name} – " + L.t("aile / yedek kodu (gizli)"))
+        }
+        add(L.t("WhatsApp ile gönder (bağlantı)"), false) {
+            QrCard.shareText(
+                this,
+                "🔐 ${b.name}\n" + L.t("Kim_O aile / yedek kodu. Gizli tutun. Kim_O'da \"İçe aktar\"a yapıştırın ya da bağlantıyı açıp \"Uygulamaya ekle\"ye basın:") + "\n$link"
+            )
+        }
+        add(L.t("Galeriye kaydet (yazdırmak için)"), false) {
+            toast(
+                if (QrCard.saveToGallery(this, bmp, b.name + "-aile")) L.t("Galeri › Zil klasörüne kaydedildi")
+                else L.t("Kaydedilemedi (Android 10+ gerekir). WhatsApp ile gönderin.")
+            )
+        }
+        add(L.t("Bağlantıyı kopyala"), false) {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("zil", link))
+            toast(L.t("Kopyalandı"))
+        }
+
+        val sv = ScrollView(this)
+        sv.addView(box)
+        AlertDialog.Builder(this)
+            .setTitle("🔐 " + b.name)
+            .setView(sv)
+            .setNegativeButton(L.t("Kapat"), null)
+            .show()
+    }
+
+    // ------------------------------------------------------------ içe aktar / geri yükle
+
+    private fun info(msg: String) {
+        AlertDialog.Builder(this)
+            .setMessage(msg)
+            .setPositiveButton(L.t("Tamam"), null)
+            .show()
+    }
+
+    private fun importDialog() {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(22), dp(10), dp(22), dp(4))
+
+        val note = TextView(this)
+        note.text = L.t("Başka bir telefondan ya da sıfırlanmadan önce aldığınız aile / yedek kodunu ekleyin: bağlantıyı yapıştırın ya da QR görselini seçin. Aynı zili ailenizdeki birkaç telefon birlikte kullanabilir.")
+        note.textSize = 14f
+        note.setTextColor(TEXT)
+        box.addView(note)
+
+        val input = EditText(this)
+        input.hint = L.t("Aile / yedek bağlantısı")
+        input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        input.minLines = 2
+        input.maxLines = 4
+        box.addView(input, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
+        var dlg: AlertDialog? = null
+
+        box.addView(
+            button(L.t("Panodan yapıştır"), false) {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = cm.primaryClip
+                val t = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(this)?.toString() else null
+                if (t.isNullOrBlank()) toast(L.t("Pano boş")) else input.setText(t)
+            },
+            LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(8) }
+        )
+        box.addView(
+            button(L.t("Galeriden QR görseli seç"), false) {
+                dlg?.dismiss()
+                try {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(
+                        Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),
+                        REQ_IMPORT_IMG
+                    )
+                } catch (_: Throwable) {
+                    toast(L.t("Bu telefonda görsel seçici açılamadı"))
+                }
+            },
+            LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(8) }
+        )
+
+        val sv = ScrollView(this)
+        sv.addView(box)
+        val d = AlertDialog.Builder(this)
+            .setTitle(L.t("Zili içe aktar"))
+            .setView(sv)
+            .setPositiveButton(L.t("Ekle")) { _, _ -> handleInvite(input.text.toString()) }
+            .setNegativeButton(L.t("İptal"), null)
+            .create()
+        dlg = d
+        d.show()
+    }
+
+    /** Yapıştırılan / okunan / kimo:// ile gelen kodu denetler; uygunsa onay penceresini açar. */
+    private fun handleInvite(text: String) {
+        val inv = Store.parseInvite(text)
+        when {
+            inv == null ->
+                info(L.t("Geçerli bir Kim_O zil kodu bulunamadı. Zilin sahibinin telefonundaki \"QR / Paylaş › Aile / yedek kodu\" bağlantısını ya da görselini kullanın."))
+            inv.priv.isEmpty() || inv.pub.isEmpty() ->
+                info(L.t("Bu, kapıdaki ziyaretçi kodu; zili devralmak için yetmez (güvenlik için özel anahtar içermez). Zilin sahibinin telefonunda \"QR / Paylaş › Aile / yedek kodu\" bölümünü açıp onu kullanın."))
+            inv.server != Store.server(this) ->
+                info(L.t("Bu zil farklı bir ntfy sunucusu kullanıyor. Ayarlar › Gelişmiş ayarlar'dan sunucuyu aynı yapıp tekrar deneyin."))
+            !Crypto.pairMatches(inv.pub, inv.priv, inv.topic) ->
+                info(L.t("Bu kod bozuk ya da eksik; anahtarlar birbirine uymuyor. Kodu yeniden paylaşmasını isteyin."))
+            Store.bells(this).any { it.topic == inv.topic } ->
+                toast(L.t("Bu zil bu telefonda zaten ekli"))
+            else -> confirmInvite(inv)
+        }
+    }
+
+    private fun confirmInvite(inv: Invite) {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(22), dp(10), dp(22), dp(4))
+
+        val msg = TextView(this)
+        msg.text = L.t("Bu zil bu telefona eklenecek ve burada dinlenecek. Ailedeki diğer telefonlar da aynı kodla aynı zili dinleyebilir. Yalnızca tanıdığınız birinden aldıysanız ekleyin. Adı isterseniz değiştirin.")
+        msg.textSize = 14f
+        msg.setTextColor(TEXT)
+        box.addView(msg)
+
+        val input = EditText(this)
+        input.setText(inv.name)
+        input.setSingleLine()
+        input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        box.addView(input, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
+
+        AlertDialog.Builder(this)
+            .setTitle(L.t("Zil eklensin mi?"))
+            .setView(box)
+            .setPositiveButton(L.t("Ekle")) { _, _ ->
+                val nm = input.text.toString().trim().ifEmpty { inv.name }.take(60)
+                val all = Store.bells(this)
+                if (all.any { it.topic == inv.topic }) {
+                    toast(L.t("Bu zil bu telefonda zaten ekli"))
+                } else {
+                    all.add(
+                        Bell(java.util.UUID.randomUUID().toString(), nm, inv.topic, true, Sounds.DEFAULT, inv.pub, inv.priv)
+                    )
+                    Store.saveBells(this, all)
+                    ServiceCtl.reload(this)
+                    render()
+                    toast(L.f("\"%s\" eklendi", nm))
+                }
+            }
+            .setNegativeButton(L.t("Vazgeç"), null)
             .show()
     }
 

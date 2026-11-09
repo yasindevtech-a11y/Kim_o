@@ -46,7 +46,15 @@ class LauncherActivity : Activity() {
 
     private fun openMain() {
         prefs().edit().putBoolean("starting", true).apply()
-        startActivity(Intent(this, MainActivity::class.java))
+        val go = Intent(this, MainActivity::class.java)
+        // kimo://add#… ile açıldıysa (aile / yedek kodu), bağlantıyı ana ekrana ilet
+        val link = intent?.data
+        if (intent?.action == Intent.ACTION_VIEW && link != null) {
+            go.action = Intent.ACTION_VIEW
+            go.data = link
+            go.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        startActivity(go)
         finish()
     }
 

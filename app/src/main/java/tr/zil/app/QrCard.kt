@@ -21,8 +21,12 @@ import java.io.File
 
 object QrCard {
 
-    /** Yazdırılabilir kart: üstte zil adı, ortada QR, altta açıklama. */
-    fun make(link: String, title: String): Bitmap {
+    /**
+     * Yazdırılabilir kart: üstte zil adı, ortada QR, altta açıklama.
+     * [family] true ise aile/yedek kartı üretilir: kırmızı şerit ve "GİZLİ" uyarısı taşır,
+     * böylece kapıya asılan ziyaretçi kartıyla karıştırılmaz.
+     */
+    fun make(link: String, title: String, family: Boolean = false): Bitmap {
         val qrSize = 860
         val hints = HashMap<EncodeHintType, Any>()
         hints[EncodeHintType.MARGIN] = 0
@@ -45,7 +49,9 @@ object QrCard {
         val c = Canvas(card)
         c.drawColor(Color.WHITE)
 
-        val bar = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FF6D00") }
+        val bar = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor(if (family) "#C62828" else "#FF6D00")
+        }
         c.drawRect(0f, 0f, w.toFloat(), 14f, bar)
         c.drawRect(0f, h - 14f, w.toFloat(), h.toFloat(), bar)
 
@@ -55,7 +61,7 @@ object QrCard {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         t.textSize = 96f
-        c.drawText("🔔", w / 2f, 170f, t)
+        c.drawText(if (family) "🔐" else "🔔", w / 2f, 170f, t)
 
         // Uzun adları sığdır
         t.textSize = 84f
@@ -70,9 +76,16 @@ object QrCard {
             textSize = 52f
         }
         t.textSize = 56f
-        // Kapıdaki kartı herkes okur: iki dilli
-        c.drawText("Zile basmak için okutun", w / 2f, 1254f, t)
-        c.drawText("Scan to ring the bell", w / 2f, 1320f, s)
+        if (family) {
+            // Aile kartını yalnızca aile okur; yine de iki dilli ve açık uyarılı
+            t.color = Color.parseColor("#C62828")
+            c.drawText("AİLE / YEDEK KODU – GİZLİ", w / 2f, 1254f, t)
+            c.drawText("Family / backup code – keep private", w / 2f, 1320f, s)
+        } else {
+            // Kapıdaki kartı herkes okur: iki dilli
+            c.drawText("Zile basmak için okutun", w / 2f, 1254f, t)
+            c.drawText("Scan to ring the bell", w / 2f, 1320f, s)
+        }
         return card
     }
 

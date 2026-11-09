@@ -10,6 +10,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.text.InputFilter
 import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
@@ -21,7 +22,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
-import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -42,6 +42,7 @@ class AlertActivity : Activity() {
 
     private var topic = ""
     private var sid = ""
+    private var sk = ""      // ziyaretçinin bu oturum için yolladığı yanıt anahtarı (yanıtlar bununla şifrelenir)
     private var vlang = ""   // ziyaretçinin dili ("tr", "en" ya da bilinmiyor)
 
     private val closer = object : BroadcastReceiver() {
@@ -164,6 +165,7 @@ class AlertActivity : Activity() {
             textSize = 16f
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             setSingleLine()
+            filters = arrayOf(InputFilter.LengthFilter(200))
             backgroundTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
         }
         replyBox.addView(
@@ -237,15 +239,23 @@ class AlertActivity : Activity() {
 
         topic = i?.getStringExtra("topic") ?: ""
         sid = i?.getStringExtra("sid") ?: ""
+        sk = i?.getStringExtra("sk") ?: ""
         vlang = i?.getStringExtra("vlang") ?: ""
-        // Ziyaretçi kimliği yoksa (eski sayfa / test) yanıt gönderilemez
-        replyBox.visibility = if (topic.isEmpty() || sid.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+        // Ziyaretçi kimliği ya da yanıt anahtarı yoksa (eski sayfa / test) yanıt gönderilemez
+        replyBox.visibility =
+            if (topic.isEmpty() || sid.isEmpty() || sk.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
     }
 
     private fun sendReply(text: String) {
         val t = text.trim().take(200)
-        if (t.isEmpty() || topic.isEmpty() || sid.isEmpty()) return
+        if (t.isEmpty() || topic.isEmpty() || sid.isEmpty() || sk.isEmpty()) return
         val url = "${Store.server(this)}/$topic-$sid"
+        // Yanıt uçtan uca şifrelenir: yalnızca bu ziyaretçinin tarayıcısı çözebilir
+        val body = Crypto.encryptReply(sk, "$topic-$sid", t)
+        if (body == null) {
+            Toast.makeText(this, L.t("Gönderilemedi"), Toast.LENGTH_SHORT).show()
+            return
+        }
 
         Thread {
             val ok = try {
@@ -254,7 +264,7 @@ class AlertActivity : Activity() {
                 c.doOutput = true
                 c.connectTimeout = 10_000
                 c.readTimeout = 10_000
-                c.outputStream.use { it.write(JSONObject().put("r", t).toString().toByteArray()) }
+                c.outputStream.use { it.write(body.toByteArray()) }
                 val code = c.responseCode
                 c.disconnect()
                 code in 200..299

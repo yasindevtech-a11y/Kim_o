@@ -252,22 +252,44 @@ class ListenService : Service() {
         val nowSec = (System.currentTimeMillis() + offsetMs) / 1000
         if (nowSec - time > MAX_AGE_SEC) return
 
-        // Ziyaretçi sayfası JSON yollar: {"v":1,"e":<sayfa açılalı sn>,"s":<ziyaretçi kimliği>,"n":<not>}
-        // Eski sürüm sayfalar "zil <sn>" yollar; ikisi de desteklenir.
+        val bell = Store.bells(this).firstOrNull { it.topic == topic && it.enabled } ?: return
+
+        // Mesaj biçimleri:
+        //  - "v2.<geçici anahtar>.<şifreli>": ziyaretçi sayfası. Zilin özel anahtarıyla çözülür; içinde
+        //    {"e":<sayfa açılalı sn>,"s":<ziyaretçi kimliği>,"n":<not>,"l":<dil>,"k":<yanıt anahtarı>} vardır.
+        //  - eski sürüm sayfa / "Test": {"v":1,"e":<sn>} ya da "zil <sn>". Şifresizdir, yalnızca ZİL ÇALAR;
+        //    içindeki not ve ziyaretçi kimliği kullanılmaz (yanıt güvenle gönderilemez).
         val raw = o.optString("message").trim()
         var elapsed: Long? = null
         var sid = ""
+        var sk = ""
         var note = ""
         var vlang = ""
-        if (raw.startsWith("{")) {
+        if (raw.startsWith("v2.")) {
+            // Çözülemeyen (yanlış anahtar, bozuk ya da sahte) mesajlar sessizce atılır
+            val plain = Crypto.decryptVisitor(bell.priv, topic, raw) ?: return
             try {
-                val j = JSONObject(raw)
+                val j = JSONObject(plain)
                 if (j.has("e")) elapsed = j.optLong("e")
                 val s = j.optString("s")
-                if (Regex("^[a-z0-9]{6,20}$").matches(s)) sid = s
+                val k = j.optString("k")
+                // Yanıt yalnızca ziyaretçi kimliği ve oturum anahtarı geçerliyse mümkün
+                if (Regex("^[a-z0-9]{6,20}$").matches(s) && Crypto.isSessionKey(k) &&
+                    topic.length + 1 + s.length <= 64
+                ) {
+                    sid = s
+                    sk = k
+                }
                 note = j.optString("n").trim().take(200)
                 val lg = j.optString("l")
                 if (lg == "tr" || lg == "en") vlang = lg
+            } catch (_: Exception) {
+                return
+            }
+        } else if (raw.startsWith("{")) {
+            try {
+                val j = JSONObject(raw)
+                if (j.has("e")) elapsed = j.optLong("e")
             } catch (_: Exception) {
             }
         } else {
@@ -276,21 +298,19 @@ class ListenService : Service() {
         // 3 dakikayı aşmış oturumda zil çalma
         if (elapsed != null && elapsed > MAX_SESSION_SEC) return
 
-        val bell = Store.bells(this).firstOrNull { it.topic == topic && it.enabled } ?: return
-
         // Notlu mesajlar her zaman gösterilir; notsuz art arda basışlar 10 sn içinde tek sayılır
         val last = lastRing[topic] ?: 0L
         if (note.isEmpty() && nowSec - last < MIN_GAP_SEC) return
         lastRing[topic] = nowSec
 
-        handler.post { ring(bell.name, bell.sound, topic, sid, note, vlang) }
+        handler.post { ring(bell.name, bell.sound, topic, sid, sk, note, vlang) }
     }
 
     // ---------------------------------------------------------------- zil
 
-    private fun ring(name: String, sound: String, topic: String, sid: String, note: String, vlang: String) {
+    private fun ring(name: String, sound: String, topic: String, sid: String, sk: String, note: String, vlang: String) {
         startSound(sound)
-        showAlert(name, topic, sid, note, vlang)
+        showAlert(name, topic, sid, sk, note, vlang)
     }
 
     private fun startSound(sound: String) {
@@ -356,13 +376,14 @@ class ListenService : Service() {
         sendBroadcast(Intent(AlertActivity.ACTION_CLOSE).setPackage(packageName))
     }
 
-    private fun showAlert(name: String, topic: String, sid: String, note: String, vlang: String) {
+    private fun showAlert(name: String, topic: String, sid: String, sk: String, note: String, vlang: String) {
         val full = Intent(this, AlertActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra("name", name)
             putExtra("time", System.currentTimeMillis())
             putExtra("topic", topic)
             putExtra("sid", sid)
+            putExtra("sk", sk)
             putExtra("note", note)
             putExtra("vlang", vlang)
         }
