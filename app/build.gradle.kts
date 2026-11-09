@@ -29,8 +29,8 @@ android {
         applicationId = "tr.zil.app"
         minSdk = 26
         targetSdk = 36          // Play Store, Ağustos 2026'dan beri hedef API 36 ister
-        versionCode = 6
-        versionName = "1.6"
+        versionCode = 7
+        versionName = "1.7"
 
         // Ziyaretçi sayfasının adresi. GitHub Actions derlerken otomatik verir
         // (-PpageUrl=...), kullanıcı ayrıca bir şey girmek zorunda kalmaz.
