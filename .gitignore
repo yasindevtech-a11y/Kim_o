@@ -1,0 +1,9 @@
+build/
+.gradle/
+.idea/
+local.properties
+*.iml
+# Play Store yükleme anahtarı ve parolaları asla depoya girmesin
+upload.keystore
+*.jks
+GITHUB_SECRETS.txt

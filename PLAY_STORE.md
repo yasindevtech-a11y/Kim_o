@@ -12,9 +12,10 @@ Kodla ilgili her şey (API 36, AAB, dil, reklam onayı, gizlilik sayfası) hazı
 1. **Paket adı** (`applicationId`): şu an `tr.zil.app`. Play'de paket adı **bir kez seçilir, sonra değiştirilemez**.
    Daha benzersiz bir ad istiyorsanız (örn. `tr.kimo.app`) yayınlamadan **önce** `app/build.gradle.kts` içindeki
    `applicationId` satırını değiştirin. Değişirse telefondaki mevcut Kim_O ile yan yana ayrı bir uygulama olarak kurulur.
-2. **Gizlilik sayfasındaki iletişim bilgisi:** `docs/gizlilik.html` içinde sarı işaretli iki yer var:
-   `[AD SOYAD veya GELİŞTİRİCİ ADI]` ve `[E-POSTA ADRESİ]`. Bu sayfa herkese açıktır; kişisel e-postanızı
-   göstermek istemiyorsanız yalnızca bu iş için ayrı bir e-posta adresi açın.
+2. **Gizlilik sayfasındaki iletişim bilgisi:** `docs/gizlilik.html` içine ad (Yasin DEMİRGAN), e-posta (yasindev.tech@gmail.com)
+   ve adres yazıldı. **Bu sayfa herkese açıktır; adres de herkese görünür.** Ev adresinizi göstermek istemiyorsanız
+   dosyadaki iki `Adres:` satırını (Türkçe ve İngilizce bölümde birer tane) silin. Play Console geliştirici hesabı için ayrıca adres isteyecektir;
+   mağazada hangi iletişim bilgilerinin herkese gösterileceği hesap türüne göre değişir, Console'daki açıklamaya bakın.
 3. **Hesap türü:** Kişisel hesapta zorunlu test süreci var (aşağıda). Şirket/kurum hesabında yok.
 
 ## 1) Geliştirici hesabı
@@ -30,7 +31,10 @@ Kodla ilgili her şey (API 36, AAB, dil, reklam onayı, gizlilik sayfası) hazı
 - GitHub'ın ürettiği **AAB** dosyası `Actions → son derleme → Artifacts → kimo-aab-play-store` içindedir.
 - Anahtar tanımlamazsanız AAB, depodaki **herkese açık test anahtarıyla** imzalanır. Bunu Play'e *deneme için* yükleyebilirsiniz
   ama kalıcı kullanmayın: parolası depoda açıkça yazıdır.
-- Kendi anahtarınızı üretin (bilgisayarda, bir kez):
+- **Sizin için hazır bir yükleme anahtarı üretildi** (`upload.keystore`, adınıza, alias `upload`). Size ayrıca `GITHUB_SECRETS.txt`
+  dosyası verildi: içindeki 4 değeri aşağıdaki tabloya göre GitHub'a ekleyin. Aşağıdaki `keytool` komutu yalnızca kendi anahtarınızı
+  ayrıca üretmek isterseniz gereklidir.
+- Kendi anahtarınızı üretmek isterseniz (bilgisayarda, bir kez):
 
   ```
   keytool -genkeypair -v -keystore upload.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000
@@ -72,9 +76,9 @@ Uygulama hesap/rehber/konum/fotoğraf toplamaz; ama iki şey cihazdan dışarı 
 |---|---|---|
 | **Reklam kimliği / cihaz kimlikleri** (AdMob) | Reklam | *Toplanıyor, üçüncü taraflarla paylaşılıyor (Google AdMob)*, amaç: reklam, isteğe bağlı değil |
 | **Yaklaşık konum / IP** (AdMob) | Reklam, kötüye kullanımı önleme | AdMob'un verdiği bilgiye göre işaretleyin |
-| **Diğer uygulama içi mesajlar** (ziyaretçi notu ve ev sahibi yanıtı) | Zilin işlevi | *Toplanıyor* (ntfy.sh'a iletiliyor), *paylaşılmıyor* (hizmet sağlayıcı), amaç: uygulama işlevi |
+| **Diğer uygulama içi mesajlar** (ziyaretçi notu ve ev sahibi yanıtı) | Zilin işlevi | *Toplanıyor* (ntfy.sh'a **uçtan uca şifreli** iletiliyor; geliştirici ve ntfy içeriği okuyamaz), *paylaşılmıyor* (hizmet sağlayıcı), amaç: uygulama işlevi |
 
-- **Aktarım sırasında şifreleme:** Evet (HTTPS).
+- **Aktarım sırasında şifreleme:** Evet (HTTPS; notlar ve yanıtlar ayrıca uçtan uca şifreli).
 - **Silme isteği yolu:** geliştiricide kullanıcı verisi tutulmadığı için "yok" / e-posta ile ulaşım.
 - Formdaki cevaplar, Google AdMob'un güncel "veri açıklama" sayfasıyla ve gizlilik politikanızla **uyumlu** olmalıdır; tutarsızlık reddedilme sebebidir.
 
@@ -117,8 +121,9 @@ Gerekirse bu geçişi birlikte yaparız.
 ## Kontrol listesi
 
 - [ ] Paket adı kesinleşti
-- [ ] `gizlilik.html` iletişim alanları dolu ve sayfa açılıyor
-- [ ] Yükleme anahtarı üretildi, 4 gizli değer GitHub'a eklendi
+- [ ] `gizlilik.html` açılıyor; ad/e-posta/adres doğru (adresi göstermek istemiyorsanız satırları silin)
+- [x] Yükleme anahtarı üretildi (`upload.keystore`, `GITHUB_SECRETS.txt`) ve güvenli yere yedeklendi
+- [ ] 4 gizli değer GitHub → Settings → Secrets and variables → Actions'a eklendi
 - [ ] AdMob uygulaması Play sayfasına bağlandı, `admob.properties` güncellendi
 - [ ] Simge, öne çıkan görsel, ekran görüntüleri hazır
 - [ ] Veri güvenliği formu, içerik derecelendirme, hedef kitle dolduruldu

@@ -56,15 +56,43 @@ Firebase yok, kendi sunucunuz yok, hesap yok. Ücretsizdir (ana ekranda küçük
 
 ---
 
-## Not bırakma ve yanıt (iki yönlü)
+## Not bırakma ve yanıt (iki yönlü, uçtan uca şifreli)
 
 - Ziyaretçi sayfasında zile basmadan önce isteğe bağlı kısa bir **not** yazılabilir (en fazla 200 karakter, örn. "Kargo getirdim").
 - Not, zil çalarken ekranda ve bildirimde görünür.
 - Ev sahibi aynı ekrandan **hazır yanıt** (Geliyorum / Bir dakika bekleyin / Evde yokuz) ya da kendi yazdığı yanıtı gönderebilir.
   Yanıt, ziyaretçinin açık sayfasında anında görünür.
-- Her ziyaretçiye ayrı rastgele bir kimlik verilir. Yanıt yalnızca o ziyaretçinin sayfasına gider; aynı QR'ı okutan başka biri görmez.
-- Notlar ve yanıtlar sunucuda saklanmaz. Sayfa kapanınca/3 dakika dolunca ziyaretçi tarafında silinir; ntfy mesajları geçici
-  olarak (yaklaşık 12 saat) tutabilir.
+- **Not ve yanıtlar şifrelidir.** Ziyaretçi sayfası notu, kapıdaki QR'ın içindeki *genel anahtara* şifreler; yalnızca ev sahibinin
+  telefonundaki *özel anahtar* çözer. Yanıt ise ziyaretçinin o oturum için ürettiği tek kullanımlık anahtarla şifrelenir.
+  ntfy.sh, GitHub ve siz (geliştirici) içeriği okuyamazsınız. (AES-256-GCM + P-256 ECDH, tarayıcının kendi WebCrypto'su.)
+- Her ziyaretçiye ayrı rastgele bir kimlik verilir. Yanıt yalnızca o ziyaretçinin sayfasına gider; aynı QR'ı okutan başka biri göremez,
+  sahte yanıt da gönderemez (şifreyi çözemeyen yanıtlar sayfada gösterilmez).
+- ntfy yine de şunları görür: rastgele zil kodu, rastgele ziyaretçi kimliği, mesajın zamanı/boyutu, IP. İçerik görünmez.
+
+### Eski QR kodlar
+Sürüm 1.7'den önce basılmış QR'lar genel anahtar içermez. Okutulunca zil **yine çalar**, ama not ve yanıt kapalıdır.
+Not/yanıtı açmak için zilin **QR / Paylaş** ekranındaki yeni QR'ı yazdırın (zil kodu aynıdır, eski QR çalışmaya devam eder).
+
+## Aile ve yedek kodu (aynı zili birkaç telefonda kullanma, telefon sıfırlanınca geri yükleme)
+
+Kapıdaki QR **herkese açıktır**, bu yüzden içinde özel anahtar yoktur. Zili başka bir telefona taşımak için ayrı, **gizli** bir kod vardır:
+
+1. Zilin **QR / Paylaş** ekranında **🔐 Aile / yedek kodu (gizli)** düğmesine basın. Kırmızı şeritli ayrı bir QR kartı açılır.
+2. **WhatsApp ile gönder** ile aile bireylerine yollayın. Kendiniz için de saklayın (WhatsApp'ta "Kendime" sohbeti ya da galeri).
+   Kapıya **yapıştırmayın**; kapıya yapıştırılacak olan, turuncu şeritli "Zile basmak için okutun" kartıdır.
+3. Diğer telefonda Kim_O'yu kurun, ana ekranda **İçe aktar (aile / yedek kodu)**'na basın ve şunlardan birini yapın:
+   - **Galeriden QR görseli seç** (WhatsApp'tan gelen görseli galeriye kaydedip seçin),
+   - ya da bağlantıyı **Panodan yapıştır**,
+   - ya da QR'ı telefonun kamerasıyla okutun → açılan sayfadaki **Kim_O uygulamasına ekle** düğmesine basın.
+4. Onay penceresinde **Ekle**'ye basın. Zil o telefonda da dinlenir; ayrı bir hesap ya da kayıt gerekmez.
+
+Telefon sıfırlanırsa aynı yolla zil, **aynı QR ile geri yüklenir**: kapıdaki QR değişmez, tekrar basmanıza gerek kalmaz.
+
+Önemli:
+- Aile kodunu alan herkes zili kendi telefonunda dinleyebilir ve yanıt verebilir. Yalnızca güvendiklerinize gönderin.
+- Galeriye kaydedilen görsel, telefonunuzun fotoğraf yedeğine (örn. Google Fotoğraflar) girebilir. Bunu istemiyorsanız WhatsApp'ta "Kendime" sohbetinde saklayın.
+- Kod yanlış ellere geçerse **Düzenle → Kodu yenile**: yeni zil kodu + yeni anahtarlar üretilir; eski QR ve eski aile kodları çalışmaz olur.
+- Aile kodu olmadan (yalnızca kapıdaki QR ile) zil devralınamaz; bu bilerek böyledir.
 
 ## Sayfa açılmıyorsa (404 hatası)
 
@@ -85,7 +113,8 @@ QR okutunca "404" çıkıyorsa GitHub Pages henüz açık değildir:
 - **Kalıcı bildirim:** Android, arka planda dinleyen uygulama için bir bildirim göstermek zorundadır; bunu tamamen
   kaldırmak mümkün değil. Kim_O bunu en sessiz seviyede gösterir (durum çubuğunda simge yok, kilit ekranında gizli).
   Ayarlar → Bildirim → **Kalıcı bildirimi gizle / ayarla** ile Android'in kendi ayarından tamamen kapatabilirsiniz; zil yine çalışır.
-- **Gizlilik politikası:** Ayarlar → Gizlilik ve reklamlar. Sayfa `docs/gizlilik.html`; **içindeki iki sarı alanı (ad ve e-posta) doldurun**.
+- **Gizlilik politikası:** Ayarlar → Gizlilik ve reklamlar. Sayfa `docs/gizlilik.html`; ad, e-posta ve adres bilgileriniz içine yazılıdır.
+  Ev adresinizin herkese açık bir sayfada durmasını istemiyorsanız o dosyadaki iki `Adres:` satırını silin.
 - **Gelişmiş ayarlar:** sayfa adresi ve ntfy sunucusu burada, varsayılan olarak gizlidir.
 
 ## Reklam (AdMob)
@@ -108,7 +137,7 @@ dürüst risk değerlendirmesi için: **[PLAY_STORE.md](PLAY_STORE.md)**. Mağaz
   **İstisna:** reklam gösteren Google AdMob, kendi politikasına göre reklam kimliği gibi verileri işler (gizlilik sayfasında yazılıdır).
 - Ortak tek parça `docs/index.html` sayfasıdır. Herkese aynıdır, hiçbir şey kaydetmez. Zil kodu adresin `#` kısmında durur,
   bu kısım sayfayı barındıran sunucuya gitmez.
-- Bildirimi taşıyan ntfy sunucusu rastgele zil kodunu, rastgele ziyaretçi kimliğini, varsa ziyaretçinin notunu ve ev sahibinin yanıtını görür.
+- Bildirimi taşıyan ntfy sunucusu rastgele zil kodunu, rastgele ziyaretçi kimliğini, mesajın zamanını/boyutunu görür; not ve yanıtlar şifreli olduğundan içeriği göremez.
 - Ziyaretçinin IP adresi, her web sitesinde olduğu gibi, sayfayı ve ntfy'yi barındıran sunuculara düşer.
   Uygulamanızı Play Store'da yayınlarsanız KVKK açısından bir hukukçuya danışın.
 
@@ -118,10 +147,10 @@ dürüst risk değerlendirmesi için: **[PLAY_STORE.md](PLAY_STORE.md)**. Mağaz
 - **3 dakika kuralı ziyaretçinin tarayıcısında çalışır.** Süre dolunca buton kaybolur, adres çubuğundaki
   zil kodu ve saklanan süre silinir; yenileyince çalışmaz, QR'ı tekrar okutmak gerekir.
   Ancak QR'ı çok kez okutan biri yeniden süre alır, bunu sunucusuz engelleyemeyiz.
-- **Mesajlar ntfy.sh üzerinden geçer.** İçerikte zil kodu ve (varsa) not/yanıt yazar. ntfy.sh mesajları
-  yaklaşık 12 saat saklayabilir, bunu siz silemezsiniz; nota hassas bilgi yazılmasın. Uygulama 3 dakikadan eski mesajları yok sayar.
-- **Zil kodu tahmin edilemez** (rastgele 16 karakter) ama QR'ı gören herkes zili çalabilir; bu zaten amaç.
-  Biri kötüye kullanırsa **Düzenle → Kodu yenile** yapın. Aynı zilde art arda basışlar 10 saniye içinde tek sayılır.
+- **Mesajlar ntfy.sh üzerinden geçer, ama not ve yanıtlar şifrelidir.** ntfy.sh şifreli mesajı yaklaşık 12 saat saklayabilir;
+  içeriği okuyamaz. Zil kodu, ziyaretçi kimliği ve "bir mesaj geldi" bilgisi gizlenemez. Uygulama 3 dakikadan eski mesajları yok sayar.
+- **Zil kodu tahmin edilemez** (rastgele 16 karakter) ama kapıdaki QR'ı gören herkes zili çalabilir; bu zaten amaç.
+  Başkalarının notunu/yanıtını okuyamazlar. Biri kötüye kullanırsa **Düzenle → Kodu yenile** yapın. Aynı zilde art arda basışlar 10 saniye içinde tek sayılır.
 - **Ses alarm sesi seviyesinden çalar.** Telefonun *alarm sesi* kapalıysa zil duyulmaz; bir kez kontrol edin.
 - **Bazı telefonlar (Xiaomi, Huawei, Oppo, Samsung…)** arka plan uygulamalarını agresif kapatır.
   Uygulamayı "otomatik başlat" listesine ekleyin, son uygulamalarda kilitleyin. Ayrıntı: dontkillmyapp.com
@@ -133,7 +162,9 @@ dürüst risk değerlendirmesi için: **[PLAY_STORE.md](PLAY_STORE.md)**. Mağaz
 ```
 app/                 Android uygulaması (Kotlin, ek kütüphane: ZXing QR)
   src/main/java/tr/zil/app/
-    MainActivity.kt  zil listesi, ekle/düzenle/sil, QR ve WhatsApp paylaşımı
+    MainActivity.kt  zil listesi, ekle/düzenle/sil, QR ve WhatsApp paylaşımı, aile kodu, içe aktar
+    Crypto.java      uçtan uca şifreleme (P-256 ECDH + AES-256-GCM); ziyaretçi sayfasıyla birebir uyumlu
+    QrReader.kt      galerideki QR görselini okur (içe aktarma)
     ListenService.kt arka plan dinleme, ses, bildirim
     AlertActivity.kt kilit ekranında "Biri zile bastı" ekranı
     QrCard.kt        QR kartı üretme + paylaşma
