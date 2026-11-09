@@ -34,7 +34,7 @@
   <!-- ===================================================== TÜRKÇE -->
   <section id="tr">
     <h2 style="border-top:0">Gizlilik Politikası (Türkçe)</h2>
-    <p class="meta">Son güncelleme: 8 Kasım 2026</p>
+    <p class="meta">Son güncelleme: 9 Kasım 2026</p>
 
     <div class="box">
       <p><b>Kısaca:</b> Kim_O hesap istemez. Adınızı, e-posta adresinizi, konumunuzu, rehberinizi veya fotoğraflarınızı toplamayız.
@@ -42,17 +42,24 @@
     </div>
 
     <h3>Veri sorumlusu / geliştirici</h3>
-    <p><mark>[AD SOYAD veya GELİŞTİRİCİ ADI]</mark> — iletişim: <mark>[E-POSTA ADRESİ]</mark></p>
+    <p><b>Yasin DEMİRGAN</b><br>
+    E-posta: <a href="mailto:yasindev.tech@gmail.com">yasindev.tech@gmail.com</a><br>
+    Adres: Akdere Mah. 372. Cad. 13/5, Mamak / Ankara</p>
 
     <h2>1. Telefonunuzda saklananlar</h2>
-    <p>Eklediğiniz zillerin adları, her zil için rastgele üretilen kodlar, seçtiğiniz zil sesi ve dil tercihi <b>yalnızca sizin telefonunuzda</b> saklanır.
+    <p>Eklediğiniz zillerin adları, her zil için rastgele üretilen kodlar ve şifreleme anahtarları (genel ve özel anahtar), seçtiğiniz zil sesi ve dil tercihi <b>yalnızca sizin telefonunuzda</b> saklanır.
     Bunlar geliştiriciye gönderilmez. Uygulamayı sildiğinizde bu veriler de silinir.</p>
+    <p>İsterseniz bir zili <b>aile / yedek kodu</b> ile (QR görseli ya da bağlantı) başka bir telefona aktarabilir veya telefonunuz sıfırlandıktan sonra geri yükleyebilirsiniz.
+    Bu kod zilin özel anahtarını içerir; onu nereye kaydedeceğinize ve kime göndereceğinize siz karar verirsiniz (örneğin WhatsApp sohbeti, galeri ve telefonunuzun fotoğraf yedeği bu kodu saklayabilir).
+    Geliştirici bu kodu görmez ve saklamaz.</p>
 
     <h2>2. Ziyaretçi sayfası ve zil mesajları</h2>
     <ul>
       <li>Kapıdaki QR kodu okutan ziyaretçi, GitHub Pages üzerinde barındırılan sade bir sayfayı açar. GitHub, bir sayfa isteğinde IP adresi gibi bağlantı bilgilerini kendi politikasına göre işleyebilir.</li>
-      <li>Ziyaretçi zile bastığında (ya da not/yanıt gönderildiğinde) mesaj, bildirim iletim servisi <b>ntfy.sh</b> üzerinden ev sahibinin telefonuna iletilir. Mesajın içinde şunlar bulunur: rastgele zil kodu, rastgele ziyaretçi kimliği, sayfanın açık kalma süresi, ziyaretçinin dili ve varsa ziyaretçinin yazdığı <b>not</b> (en çok 200 karakter). Ev sahibinin yanıtı da aynı yoldan gider.</li>
-      <li>ntfy.sh, mesajları kısa bir süre (yaklaşık 12 saat) saklayabilir. Not ve yanıtlara kişisel veya hassas bilgi yazmamanızı öneririz.</li>
+      <li>Ziyaretçi zile bastığında (ya da not/yanıt gönderildiğinde) mesaj, bildirim iletim servisi <b>ntfy.sh</b> üzerinden ev sahibinin telefonuna iletilir. Ev sahibinin yanıtı da aynı yoldan gider.</li>
+      <li><b>Uçtan uca şifreleme:</b> ziyaretçinin notu (en çok 200 karakter), dili, sayfanın açık kalma süresi ve ev sahibinin yanıtı <b>şifrelenerek</b> gönderilir. Ziyaretçi sayfası mesajı, kapıdaki QR koddaki <i>genel anahtara</i> şifreler; yalnızca ev sahibinin telefonundaki <i>özel anahtar</i> çözebilir. Yanıtlar, ziyaretçinin o oturum için ürettiği tek kullanımlık anahtarla şifrelenir. Şifreleme ziyaretçinin tarayıcısında ve ev sahibinin telefonunda yapılır; ntfy.sh, GitHub ve geliştirici içeriği okuyamaz.</li>
+      <li>Şifreli içeriğe rağmen ntfy.sh şunları görebilir: rastgele zil kodu, rastgele ziyaretçi kimliği (yanıt kanalının adında), mesajın zamanı ve boyutu ve IP adresi. ntfy.sh mesajları kısa bir süre (yaklaşık 12 saat) saklayabilir.</li>
+      <li>Eski bir sürümden kalma (genel anahtar içermeyen) QR kodlar yalnızca "zil çal" mesajı gönderir; not ve yanıt özelliği kapalıdır.</li>
       <li>Ziyaretçi sayfası 3 dakika sonra kendini kapatır ve bu oturuma ait tarayıcı kaydını siler.</li>
       <li>Gelişmiş ayarlardan ntfy sunucusunu kendi sunucunuzla değiştirebilirsiniz.</li>
     </ul>
@@ -73,7 +80,9 @@
     <p>Telefondan zil sesi seçerken sistemin kendi ses seçicisi kullanılır; ses dosyalarınıza erişim izni istemeyiz.</p>
 
     <h2>5. Güvenlik</h2>
-    <p>İletişim HTTPS ile yapılır. Zil kodları rastgele ve tahmin edilemeyecek uzunluktadır. QR kodu gören herkes o zili çalabilir; kod başkasının eline geçerse Düzenle › <i>Kodu yenile</i> ile eski kodu geçersiz kılabilirsiniz.</p>
+    <p>İletişim HTTPS ile yapılır; notlar ve yanıtlar ayrıca uçtan uca şifrelenir (AES-256-GCM, P-256 ECDH). Zil kodları rastgele ve tahmin edilemeyecek uzunluktadır.
+    Kapıdaki QR kodu gören herkes o zili çalabilir ve ev sahibine şifreli not gönderebilir, ancak başkalarının mesajlarını okuyamaz. <b>Aile / yedek kodu ise gizli tutulmalıdır</b>: onu alan kişi zili kendi telefonunda dinleyebilir.
+    Bir kod başkasının eline geçerse Düzenle › <i>Kodu yenile</i> ile hem eski QR kodu hem de eski aile / yedek kodunu geçersiz kılabilirsiniz.</p>
 
     <h2>6. Çocuklar</h2>
     <p>Uygulama çocuklara yönelik değildir.</p>
@@ -88,7 +97,7 @@
   <!-- ===================================================== ENGLISH -->
   <section id="en">
     <h2>Privacy Policy (English)</h2>
-    <p class="meta">Last updated: 8 November 2026</p>
+    <p class="meta">Last updated: 9 November 2026</p>
 
     <div class="box">
       <p><b>In short:</b> Kim_O does not require an account. We do not collect your name, email address, location, contacts or photos.
@@ -96,17 +105,24 @@
     </div>
 
     <h3>Controller / developer</h3>
-    <p><mark>[FULL NAME or DEVELOPER NAME]</mark> — contact: <mark>[EMAIL ADDRESS]</mark></p>
+    <p><b>Yasin DEMİRGAN</b><br>
+    Email: <a href="mailto:yasindev.tech@gmail.com">yasindev.tech@gmail.com</a><br>
+    Address: Akdere Mah. 372. Cad. 13/5, Mamak / Ankara, Türkiye</p>
 
     <h2>1. What is stored on your phone</h2>
-    <p>The names of the bells you add, the random code generated for each bell, your chosen bell sound and your language preference are stored <b>only on your phone</b>.
+    <p>The names of the bells you add, the random code and encryption keys (public and private key) generated for each bell, your chosen bell sound and your language preference are stored <b>only on your phone</b>.
     They are not sent to the developer. They are deleted when you uninstall the app.</p>
+    <p>If you wish, you can move a bell to another phone, or restore it after your phone is reset, using a <b>family / backup code</b> (QR image or link).
+    This code contains the bell's private key; you decide where to save it and who to send it to (for example a WhatsApp chat, the gallery and your phone's photo backup may keep it).
+    The developer does not see or store this code.</p>
 
     <h2>2. Visitor page and bell messages</h2>
     <ul>
       <li>A visitor who scans the QR code at the door opens a simple page hosted on GitHub Pages. GitHub may process connection data such as the IP address when the page is requested, according to its own policy.</li>
-      <li>When the visitor rings the bell (or sends a note/reply), the message is delivered to the homeowner's phone through the notification relay <b>ntfy.sh</b>. The message contains: a random bell code, a random visitor ID, how long the page has been open, the visitor's language and, if written, the visitor's <b>note</b> (up to 200 characters). The homeowner's reply travels the same way.</li>
-      <li>ntfy.sh may keep messages for a short time (about 12 hours). Please do not write personal or sensitive information in notes and replies.</li>
+      <li>When the visitor rings the bell (or sends a note/reply), the message is delivered to the homeowner's phone through the notification relay <b>ntfy.sh</b>. The homeowner's reply travels the same way.</li>
+      <li><b>End-to-end encryption:</b> the visitor's note (up to 200 characters), language, how long the page has been open and the homeowner's reply are sent <b>encrypted</b>. The visitor page encrypts the message to the <i>public key</i> in the QR code at the door; only the <i>private key</i> on the homeowner's phone can decrypt it. Replies are encrypted with a one-time key the visitor generates for that session. Encryption happens in the visitor's browser and on the homeowner's phone; ntfy.sh, GitHub and the developer cannot read the content.</li>
+      <li>Even with encrypted content, ntfy.sh can see: the random bell code, the random visitor ID (in the name of the reply channel), the time and size of the message, and the IP address. ntfy.sh may keep messages for a short time (about 12 hours).</li>
+      <li>QR codes left over from an older version (without a public key) only send a "ring the bell" message; the note and reply features are off.</li>
       <li>The visitor page closes itself after 3 minutes and deletes the browser record of that session.</li>
       <li>In Advanced settings you can replace the ntfy server with your own.</li>
     </ul>
@@ -127,7 +143,9 @@
     <p>When you pick a ringtone from your phone, the system's own sound picker is used; we do not ask for access to your audio files.</p>
 
     <h2>5. Security</h2>
-    <p>Communication uses HTTPS. Bell codes are random and long enough not to be guessed. Anyone who sees the QR code can ring that bell; if a code falls into the wrong hands, use Edit › <i>Renew code</i> to invalidate the old one.</p>
+    <p>Communication uses HTTPS, and notes and replies are additionally end-to-end encrypted (AES-256-GCM, P-256 ECDH). Bell codes are random and long enough not to be guessed.
+    Anyone who sees the QR code at the door can ring that bell and send the homeowner an encrypted note, but cannot read other people's messages. <b>The family / backup code must be kept private</b>: whoever has it can listen to the bell on their own phone.
+    If a code falls into the wrong hands, use Edit › <i>Renew code</i> to invalidate both the old QR code and the old family / backup code.</p>
 
     <h2>6. Children</h2>
     <p>The app is not directed at children.</p>

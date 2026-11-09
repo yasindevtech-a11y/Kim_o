@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#FF6D00">
 <title>Kim_O</title>
 <style>
@@ -49,6 +50,15 @@
     background:rgba(46,125,50,.12); border:1px solid rgba(46,125,50,.35); word-break:break-word;
   }
   .reply b { display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:2px; }
+  .reply.mine { background:rgba(255,109,0,.10); border-color:rgba(255,109,0,.35); }
+  .fam-body { font-size:16px; line-height:1.45; margin:0 0 20px; }
+  .fam-note { color:var(--muted); font-size:14px; line-height:1.4; margin:18px 0 0; }
+  .btn {
+    display:block; width:100%; max-width:320px; margin:12px auto 0; padding:14px 16px;
+    border-radius:14px; border:2px solid var(--accent); background:var(--accent); color:#fff;
+    font:inherit; font-weight:700; font-size:17px; text-decoration:none; text-align:center; cursor:pointer;
+  }
+  .btn.ghost { background:transparent; color:var(--accent); }
   .foot { margin:34px 0 0; font-size:12px; }
   .foot a { color:var(--muted); }
   .hidden { display:none !important; }
@@ -60,6 +70,15 @@
 <main>
   <p class="where" id="where">Kapı zili</p>
   <h1 id="title">Zil</h1>
+
+  <!-- Aile / yedek kodu açıldıysa (adreste özel anahtar "d" varsa) zil düğmesi yerine bu bölüm görünür -->
+  <div id="family" class="hidden">
+    <p class="fam-body" id="famBody"></p>
+    <a class="btn" id="addApp" href="#"></a>
+    <button class="btn ghost" id="copyLink" type="button"></button>
+    <p class="fam-note" id="famNote"></p>
+  </div>
+
   <textarea id="note" rows="2" maxlength="200" placeholder="İsterseniz not yazın (örn. Kargo getirdim)"></textarea>
   <button id="ring" type="button"><span class="ico" id="ico">🔔</span><span id="ringLabel">ZİLE BAS</span></button>
   <p class="msg" id="msg"></p>
@@ -73,6 +92,7 @@
   'use strict';
   var TTL = 3 * 60 * 1000;       // oturum süresi: 3 dakika
   var COOLDOWN = 15 * 1000;      // art arda basma beklemesi
+  var NOTE_MAX = 200;
   var $ = function (id) { return document.getElementById(id); };
 
   // Dil: ziyaretçinin telefon diline göre (Türkçe ya da İngilizce)
@@ -84,7 +104,11 @@
       sending: 'Gönderiliyor…', ok: 'Zil çalındı ✓ Lütfen bekleyin.',
       err: 'Gönderilemedi. İnternetinizi kontrol edip tekrar deneyin.',
       left: 'Kalan süre', expired: 'Süre doldu. Tekrar zil çalmak için QR kodu yeniden okutun.',
-      owner: 'Ev sahibi'
+      owner: 'Ev sahibi', you: 'Siz',
+      famWhere: '🔐 Aile / yedek kodu',
+      famBody: '“%s” zilini bu telefondaki Kim_O uygulamasına ekler. Yalnızca tanıdığınız birinden aldıysanız ekleyin; bu bağlantıyı kimseyle paylaşmayın.',
+      addApp: 'Kim_O uygulamasına ekle', copy: 'Bağlantıyı kopyala', copied: 'Kopyalandı ✓',
+      famNote: 'Uygulama açılmazsa: önce Kim_O’yu kurun, sonra bağlantıyı kopyalayıp uygulamada “İçe aktar”a yapıştırın.'
     },
     en: {
       where: 'Doorbell', ring: 'RING THE BELL', defName: 'Bell', privacy: 'Privacy',
@@ -93,7 +117,11 @@
       sending: 'Sending…', ok: 'Bell rung ✓ Please wait.',
       err: 'Could not send. Check your connection and try again.',
       left: 'Time left', expired: 'Time is up. Scan the QR code again to ring the bell.',
-      owner: 'Homeowner'
+      owner: 'Homeowner', you: 'You',
+      famWhere: '🔐 Family / backup code',
+      famBody: 'Adds the “%s” bell to the Kim_O app on this phone. Only add it if you got it from someone you know; do not share this link with anyone.',
+      addApp: 'Add to the Kim_O app', copy: 'Copy link', copied: 'Copied ✓',
+      famNote: 'If the app does not open: install Kim_O first, then copy the link and paste it under “Import” in the app.'
     }
   };
   var first = ((navigator.languages && navigator.languages[0]) || navigator.language || 'tr').toLowerCase();
@@ -107,32 +135,152 @@
 
   var btn = $('ring'), msg = $('msg'), timer = $('timer');
   var noteEl = $('note'), repliesEl = $('replies');
-  var params = new URLSearchParams(location.hash.replace(/^#/, ''));
+  var rawHash = location.hash.replace(/^#/, '');
+  var params = new URLSearchParams(rawHash);
   var topic = params.get('t') || '';
+  var TOPIC = topic;                       // şifreleme için sabit kopya (wipe() topic'i boşaltır)
   var name = (params.get('n') || T.defName).slice(0, 60);
   var server = params.get('s') || 'https://ntfy.sh';
+  var ownerPub = params.get('p') || '';    // zilin GENEL anahtarı (65 bayt, base64url = 87 karakter)
+  var famPriv = params.get('d') || '';     // yalnızca aile / yedek kodunda: ÖZEL anahtar (43 karakter)
 
   var validTopic = /^[A-Za-z0-9_-]{8,64}$/.test(topic);
   var validServer = /^https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/.test(server);
+  var validPub = /^[A-Za-z0-9_-]{87}$/.test(ownerPub);
+  var validPriv = /^[A-Za-z0-9_-]{43}$/.test(famPriv);
 
   $('title').textContent = name;
   document.title = name + ' – Kim_O';
 
   function say(text, cls) { msg.textContent = text; msg.className = 'msg' + (cls ? ' ' + cls : ''); }
 
+  function hideRingUi() {
+    btn.classList.add('hidden');
+    noteEl.classList.add('hidden');
+    msg.classList.add('hidden');
+    timer.classList.add('hidden');
+  }
+
+  if (!validTopic || !validServer) {
+    hideRingUi();
+    $('where').classList.add('hidden');
+    $('title').textContent = T.invalidTitle;
+    msg.classList.remove('hidden');
+    say(T.invalidMsg, 'err');
+    return;
+  }
+
+  // ---------------------------------------------------------------- aile / yedek kodu
+  // Bu adres zili çaldırmaz; uygulamaya eklemek için kullanılır. Özel anahtar yalnızca bu
+  // tarayıcıda kalır, hiçbir sunucuya gönderilmez ("#" sonrası sunucuya gitmez).
+  if (validPub && validPriv) {
+    hideRingUi();
+    $('where').textContent = T.famWhere;
+    $('family').classList.remove('hidden');
+    $('famBody').textContent = T.famBody.replace('%s', name);
+    $('famNote').textContent = T.famNote;
+    var add = $('addApp');
+    add.textContent = T.addApp;
+    add.href = 'kimo://add#' + rawHash;
+    var cp = $('copyLink');
+    cp.textContent = T.copy;
+    cp.addEventListener('click', function () {
+      var done = function () { cp.textContent = T.copied; setTimeout(function () { cp.textContent = T.copy; }, 2500); };
+      var fallback = function () {
+        var ta = document.createElement('textarea');
+        ta.value = location.href; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(location.href).then(done, fallback);
+      } else { fallback(); }
+    });
+    return;
+  }
+
+  // ---------------------------------------------------------------- şifreleme (WebCrypto)
+  // Ziyaretçi -> ev sahibi: "v2.<geçici genel anahtar>.<iv + şifreli metin>"
+  //   anahtar = SHA-256("kimo-v2|" + ECDH(geçici özel, zilin genel anahtarı)), AES-256-GCM, AAD = zil kodu
+  //   şifreli içerik: {"e":sn,"s":ziyaretçi kimliği,"n":not,"l":dil,"k":bu oturumun yanıt anahtarı}
+  // Ev sahibi -> ziyaretçi: "r2.<iv + şifreli metin>", AES-256-GCM, anahtar = yukarıdaki "k", AAD = "zilkodu-ziyaretçikimliği"
+  // Zilin genel anahtarı yoksa (eski QR) ya da tarayıcı WebCrypto'yu desteklemiyorsa yalnızca "zil çal" gider; not/yanıt kapalıdır.
+  var subtle = (window.crypto && window.crypto.subtle) || null;
+  var haveCrypto = !!(subtle && window.TextEncoder && window.TextDecoder && window.Promise && window.atob && window.btoa);
+  var encrypted = validPub && haveCrypto;
+  var enc8 = haveCrypto ? new TextEncoder() : null;
+  var dec8 = haveCrypto ? new TextDecoder() : null;
+
+  function b64u(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function unb64u(str) {
+    var s = String(str).replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    var bin = atob(s), a = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    return a;
+  }
+  function concat(a, b) { var o = new Uint8Array(a.length + b.length); o.set(a, 0); o.set(b, a.length); return o; }
+  function rnd(n) { var a = new Uint8Array(n); window.crypto.getRandomValues(a); return a; }
+
+  function sealRing(plain) {
+    var curve = { name: 'ECDH', namedCurve: 'P-256' };
+    return Promise.all([
+      subtle.importKey('raw', unb64u(ownerPub), curve, false, []),
+      subtle.generateKey(curve, true, ['deriveBits'])
+    ]).then(function (r) {
+      var owner = r[0], eph = r[1];
+      return Promise.all([
+        subtle.exportKey('raw', eph.publicKey),
+        subtle.deriveBits({ name: 'ECDH', public: owner }, eph.privateKey, 256)
+      ]);
+    }).then(function (r) {
+      var ephPub = new Uint8Array(r[0]);
+      return subtle.digest('SHA-256', concat(enc8.encode('kimo-v2|'), new Uint8Array(r[1])))
+        .then(function (kb) { return subtle.importKey('raw', kb, { name: 'AES-GCM' }, false, ['encrypt']); })
+        .then(function (aes) {
+          var iv = rnd(12);
+          return subtle.encrypt(
+            { name: 'AES-GCM', iv: iv, additionalData: enc8.encode(TOPIC), tagLength: 128 },
+            aes, enc8.encode(JSON.stringify(plain))
+          ).then(function (ct) {
+            return 'v2.' + b64u(ephPub) + '.' + b64u(concat(iv, new Uint8Array(ct)));
+          });
+        });
+    });
+  }
+
+  var sessionKey = null, replyKeyP = null;
+  if (encrypted) {
+    sessionKey = rnd(32);
+    replyKeyP = subtle.importKey('raw', sessionKey, { name: 'AES-GCM' }, false, ['decrypt']);
+  }
+  function openReply(message, sidNow) {
+    return Promise.resolve().then(function () {
+      if (String(message).indexOf('r2.') !== 0) throw new Error('format');
+      var box = unb64u(String(message).slice(3));
+      if (box.length < 28) throw new Error('short');
+      return replyKeyP.then(function (k) {
+        return subtle.decrypt(
+          { name: 'AES-GCM', iv: box.slice(0, 12), additionalData: enc8.encode(TOPIC + '-' + sidNow), tagLength: 128 },
+          k, box.slice(12)
+        );
+      });
+    }).then(function (pt) { return dec8.decode(pt); });
+  }
+
+  if (!encrypted) { noteEl.classList.add('hidden'); }
+
   function wipe() {
     // Sayfadaki tüm izleri sil: saklanan süre + adres çubuğundaki kod
     try { localStorage.removeItem('zil_start_' + topic); } catch (e) {}
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
     topic = '';
-  }
-
-  if (!validTopic || !validServer) {
-    btn.classList.add('hidden');
-    $('where').classList.add('hidden');
-    $('title').textContent = T.invalidTitle;
-    say(T.invalidMsg, 'err');
-    return;
+    sessionKey = null;
   }
 
   // Oturum başlangıcı: 3 dakika içinde yenilenirse süre devam eder
@@ -162,30 +310,32 @@
 
   var es = null, seenIds = {};
   function stopReplies() { if (es) { try { es.close(); } catch (e) {} es = null; } }
-  function addReply(text) {
+  function addMsg(who, text, mine) {
     repliesEl.classList.remove('hidden');
     var p = document.createElement('div');
-    p.className = 'reply';
-    var who = document.createElement('b');
-    who.textContent = T.owner;
+    p.className = 'reply' + (mine ? ' mine' : '');
+    var w = document.createElement('b');
+    w.textContent = who;
     var t = document.createElement('span');
     t.textContent = text;
-    p.appendChild(who); p.appendChild(t);
+    p.appendChild(w); p.appendChild(t);
     repliesEl.appendChild(p);
   }
+  function addReply(text) { addMsg(T.owner, text, false); }
   function startReplies() {
-    if (es || !window.EventSource || topic.length + sid.length + 1 > 64) return;
+    if (!encrypted || es || !window.EventSource || TOPIC.length + sid.length + 1 > 64) return;
     try {
-      es = new EventSource(server + '/' + topic + '-' + sid + '/sse?since=all');
+      es = new EventSource(server + '/' + TOPIC + '-' + sid + '/sse?since=all');
       es.onmessage = function (ev) {
         try {
           var d = JSON.parse(ev.data);
           if (d.event !== 'message' || seenIds[d.id]) return;
           seenIds[d.id] = 1;
-          var t = String(d.message || '');
-          try { var j = JSON.parse(t); if (j && j.r) t = String(j.r); } catch (e) {}
-          addReply(t.slice(0, 300));
-          if (navigator.vibrate) { try { navigator.vibrate(120); } catch (e) {} }
+          // Yalnızca oturum anahtarıyla çözülebilen (ev sahibinden gelen) yanıtlar gösterilir
+          openReply(d.message, sid).then(function (text) {
+            addReply(text.slice(0, 300));
+            if (navigator.vibrate) { try { navigator.vibrate(120); } catch (e) {} }
+          }, function () {});
         } catch (e) {}
       };
     } catch (e) {}
@@ -220,24 +370,34 @@
     if (sending || Date.now() < cooldownUntil || !topic) return;
     sending = true; btn.disabled = true;
     say(T.sending);
-    // Gövde: "zil <oturumun açılışından beri geçen saniye>" (saat farkından etkilenmez)
     var elapsed = Math.max(0, Math.floor((Date.now() - start) / 1000));
-    var noteText = (noteEl.value || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-    var payload = JSON.stringify({ v: 1, e: elapsed, s: sid, n: noteText, l: lang });
-    fetch(server + '/' + encodeURIComponent(topic), { method: 'POST', body: payload })
-      .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); })
-      .then(function () {
-        cooldownUntil = Date.now() + COOLDOWN;
-        say(T.ok, 'ok');
+    var noteText = encrypted ? (noteEl.value || '').replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX) : '';
+
+    var build = encrypted
+      ? Promise.resolve()
+          .then(function () { return sealRing({ e: elapsed, s: sid, n: noteText, l: lang, k: b64u(sessionKey) }); })
+          .catch(function () { return null; })
+      : Promise.resolve(null);
+
+    build.then(function (sealedBody) {
+      var sealed = !!sealedBody;
+      // Şifreleme başarısız olursa en azından zil çalsın: şifresiz, yalnızca "zil çal"
+      var body = sealedBody || JSON.stringify({ v: 1, e: elapsed });
+      return fetch(server + '/' + encodeURIComponent(TOPIC), { method: 'POST', body: body })
+        .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return sealed; });
+    }).then(function (sealed) {
+      cooldownUntil = Date.now() + COOLDOWN;
+      say(T.ok, 'ok');
+      if (sealed) {
+        if (noteText) addMsg(T.you, noteText, true);
         noteEl.value = '';
         startReplies();
-        if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
-        var ico = $('ico'); ico.classList.remove('ring-anim'); void ico.offsetWidth; ico.classList.add('ring-anim');
-      })
-      .catch(function () {
-        say(T.err, 'err');
-      })
-      .then(function () { sending = false; refresh(); });
+      }
+      if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
+      var ico = $('ico'); ico.classList.remove('ring-anim'); void ico.offsetWidth; ico.classList.add('ring-anim');
+    }).catch(function () {
+      say(T.err, 'err');
+    }).then(function () { sending = false; refresh(); });
   });
 })();
 </script>
