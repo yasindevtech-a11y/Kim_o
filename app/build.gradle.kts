@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,7 +8,7 @@ plugins {
 // ---------------------------------------------------------------- AdMob ayarları
 // Ayarlar kök klasördeki admob.properties dosyasından okunur.
 // USE_TEST=true iken Google'ın TEST reklamları kullanılır (kendi reklamınıza tıklama riski yok).
-val admob = java.util.Properties().apply {
+val admob = Properties().apply {
     val f = rootProject.file("admob.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
