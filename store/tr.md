@@ -20,6 +20,8 @@ Telefon kilitliyken de uyarı gelir (cihazınızın izin vermesi koşuluyla).
 • Her zile ayrı zil sesi seçin: uygulamadaki seslerden ya da telefonunuzdaki zil seslerinden.
 • Ziyaretçi zile basmadan önce kısa bir not bırakabilir ("Kargo getirdim").
 • Siz de tek dokunuşla yanıt verin: "Geliyorum", "Bir dakika bekleyin" ya da kendi mesajınız. Yanıt ziyaretçinin ekranında anında görünür.
+• Notlar ve yanıtlar uçtan uca şifrelidir: aradaki hiçbir servis içeriği okuyamaz.
+• Aynı zili ailenizdeki birkaç telefonda kullanın. Telefon sıfırlanırsa zil, gizli aile / yedek kodu ile geri yüklenir; kapıdaki QR değişmez.
 • Her ziyaretçi sayfası 3 dakika sonra kendini kapatır.
 • Bir QR kod yanlış ellere geçtiyse tek dokunuşla yenisini üretin; eskisi çalışmaz.
 • Türkçe ve İngilizce desteği. Ziyaretçi sayfası da telefonun diline göre açılır.
@@ -27,7 +29,7 @@ Telefon kilitliyken de uyarı gelir (cihazınızın izin vermesi koşuluyla).
 **Gizlilik**
 • Hesap açmanız gerekmez. Ad, konum, rehber ya da fotoğraf toplanmaz.
 • Zil adlarınız ve kodlarınız yalnızca sizin telefonunuzda saklanır.
-• Mesajlar, bildirim iletim servisi ntfy.sh üzerinden iletilir; not ve yanıtlara hassas bilgi yazmamanızı öneririz.
+• Mesajlar bildirim iletim servisi ntfy.sh üzerinden iletilir; not ve yanıtlar uçtan uca şifrelidir, ntfy.sh içeriği okuyamaz.
 • Ana ekranda reklam gösterilir (Google AdMob). Zil uyarı ekranında ve ziyaretçi sayfasında reklam yoktur.
 
 **Bilmeniz gerekenler**

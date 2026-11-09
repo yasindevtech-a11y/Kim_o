@@ -20,6 +20,8 @@ When they press it, your phone plays a bell sound and shows a "Someone rang the 
 • Pick a different sound for each bell: built-in sounds or ringtones from your phone.
 • Visitors can leave a short note before ringing ("Package delivery").
 • Reply with one tap: "I'm coming", "Please wait a minute", or write your own. The reply appears on the visitor's screen instantly.
+• Notes and replies are end-to-end encrypted: no service in between can read them.
+• Use the same bell on several phones in your family. If a phone is reset, restore the bell with the private family / backup code; the QR at the door stays the same.
 • Each visitor page closes itself after 3 minutes.
 • If a QR code falls into the wrong hands, generate a new one with one tap; the old one stops working.
 • Turkish and English. The visitor page follows the visitor's phone language.
@@ -27,7 +29,7 @@ When they press it, your phone plays a bell sound and shows a "Someone rang the 
 **Privacy**
 • No account required. No name, location, contacts or photos are collected.
 • Your bell names and codes are stored only on your phone.
-• Messages travel through the notification relay ntfy.sh; please don't write sensitive information in notes or replies.
+• Messages travel through the notification relay ntfy.sh; notes and replies are end-to-end encrypted, so ntfy.sh cannot read them.
 • Ads are shown on the main screen (Google AdMob). There are no ads on the bell alert screen or on the visitor page.
 
 **Good to know**
